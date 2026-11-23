@@ -1,0 +1,3 @@
+INSTRUMENTATION_RESULT: passed=true
+INSTRUMENTATION_RESULT: result=PASS: 228 alarm checks, 142 offscreen renders; no system alarms modified
+INSTRUMENTATION_CODE: -1

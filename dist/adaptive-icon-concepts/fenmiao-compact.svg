@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>分秒间 · 紧凑翻牌</title>
+  <rect width="108" height="108" fill="#10161F"/>
+  <g id="foreground">
+    <rect x="32" y="34.5" width="20" height="39" rx="7.5" fill="#3D715D"/>
+    <rect x="56" y="34.5" width="20" height="39" rx="7.5" fill="#3D715D"/>
+    <path d="M37.7 47.7l5-3.2H45v19h-4.1V49.7l-3.2 1.6z" fill="#D9F4E1"/>
+    <rect x="61.6" y="46.45" width="8.8" height="15.1" rx="3.6" fill="none" stroke="#D9F4E1" stroke-width="3.9"/>
+    <path d="M32 54h20m4 0h20" stroke="#10161F" stroke-width="1.55"/>
+  </g>
+</svg>

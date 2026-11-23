@@ -1,0 +1,31 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.foldstandby.clock'
+    compileSdk 33
+    buildToolsVersion '33.0.2'
+    defaultConfig { applicationId 'com.foldstandby.clock'; minSdk 30; targetSdk 33; versionCode 28; versionName '0.5.8' }
+    signingConfigs {
+        existingInstallKey {
+            storeFile rootProject.file('.build-cache/.android/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.existingInstallKey }
+        release {
+            debuggable false
+            signingConfig signingConfigs.existingInstallKey
+        }
+    }
+    applicationVariants.all { variant ->
+        if (variant.buildType.name == 'release') {
+            variant.outputs.all { outputFileName = "时栖时钟-${variant.versionName}-正式版.apk" }
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+    defaultConfig { testInstrumentationRunner 'com.foldstandby.clock.DeskChecks' }
+}
+dependencies { }
+

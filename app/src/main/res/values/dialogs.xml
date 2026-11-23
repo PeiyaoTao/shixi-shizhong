@@ -1,0 +1,22 @@
+<resources>
+    <item name="app_dialog_prepared" type="id"/>
+    <style name="FoldDialogTheme" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#B8E5C7</item>
+        <item name="android:colorBackground">#10161F</item>
+        <item name="android:textColorPrimary">#ECF1F8</item>
+        <item name="android:textColorSecondary">#94A3B8</item>
+        <item name="android:textColorAlertDialogListItem">#ECF1F8</item>
+        <item name="android:colorControlNormal">#94A3B8</item>
+        <item name="android:colorControlActivated">#B8E5C7</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowMinWidthMajor">0dp</item>
+        <item name="android:windowMinWidthMinor">0dp</item>
+        <item name="android:backgroundDimAmount">0.62</item>
+        <item name="android:buttonBarButtonStyle">@style/FoldDialogButton</item>
+    </style>
+    <style name="FoldDialogButton" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:textColor">#B8E5C7</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+</resources>

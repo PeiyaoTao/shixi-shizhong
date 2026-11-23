@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>时栖时钟 · 组件表盘</title>
+  <rect width="108" height="108" fill="#10161F"/>
+  <g id="foreground">
+    <rect x="31" y="34.5" width="31" height="39" rx="10" fill="#B8E5C7"/>
+    <rect x="66" y="34.5" width="12" height="19.5" rx="5.5" fill="#4D8A72"/>
+    <rect x="66" y="58" width="12" height="15.5" rx="5.5" fill="#32495D"/>
+    <path d="M46.5 43.5V54l6 4" fill="none" stroke="#162B26" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M71 42v4.5" fill="none" stroke="#D1EAD9" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+</svg>

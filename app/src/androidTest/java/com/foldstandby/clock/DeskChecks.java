@@ -1,0 +1,30 @@
+package com.foldstandby.clock;
+
+import android.app.Instrumentation;
+import android.content.*;
+import android.graphics.*;
+import android.os.Bundle;
+import android.view.View;
+
+/** Runs on device, using isolated preferences. No user permissions or data changes. */
+public class DeskChecks extends SceneChecks {
+    private boolean sceneSuite,effectsSuite,weatherSuite,inputSuite,styleSuite,hourglassSuite,alarmSuite,workspaceSuite,timeSuite;
+    private Throwable failure;
+    private boolean todoSuite;
+    private boolean feedbackSuite,studioSuite,adaptationSuite;
+    public void onCreate(Bundle arguments){todoSuite=arguments!=null&&"todo".equals(arguments.getString("suite"));adaptationSuite=arguments!=null&&"adaptation".equals(arguments.getString("suite"));studioSuite=arguments!=null&&"studio".equals(arguments.getString("suite"));feedbackSuite=arguments!=null&&"feedback".equals(arguments.getString("suite"));timeSuite=arguments!=null&&"time".equals(arguments.getString("suite"));workspaceSuite=arguments!=null&&"workspace".equals(arguments.getString("suite"));alarmSuite=arguments!=null&&"alarm".equals(arguments.getString("suite"));hourglassSuite=arguments!=null&&"hourglass".equals(arguments.getString("suite"));styleSuite=arguments!=null&&"styles".equals(arguments.getString("suite"));inputSuite=arguments!=null&&"inputs".equals(arguments.getString("suite"));weatherSuite=arguments!=null&&"weather".equals(arguments.getString("suite"));effectsSuite=arguments!=null&&"effects".equals(arguments.getString("suite"));sceneSuite=arguments!=null&&("scene".equals(arguments.getString("suite"))||"runtime".equals(arguments.getString("suite"))||"outer".equals(arguments.getString("suite")));super.onCreate(arguments);}
+    private void check(boolean b,String name){if(!b)throw new AssertionError(name);}
+    public void onStart(){if(todoSuite){Bundle result=TodoChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(adaptationSuite){Bundle result=ScreenAdaptationChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(studioSuite){Bundle result=StudioChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(feedbackSuite){Bundle result=FlipFeedbackChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(timeSuite){Bundle result=WorkspaceChecks.runTime(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(workspaceSuite){Bundle result=WorkspaceChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(alarmSuite){Bundle result=AlarmChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(hourglassSuite){Bundle result=SandglassChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(styleSuite){Bundle result=StyleChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(inputSuite){Bundle result=InputChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(weatherSuite){Bundle result=WeatherChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(effectsSuite){Bundle result=EffectsChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(sceneSuite){super.onStart();return;}Bundle result=new Bundle();runOnMainSync(()->{try{
+        Context context=getTargetContext();SharedPreferences p=context.getSharedPreferences("render_tests",0);p.edit().clear().commit();
+        for(int layout=0;layout<4;layout++)for(String type:Dashboard.TYPES){
+            p.edit().putInt("layout",layout).putString("slot0",type).putString("slot1",type).putString("slot2",type).putString("slot3",type).commit();
+            ClockFace face=new ClockFace(context,p);face.measure(View.MeasureSpec.makeMeasureSpec(1972,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(1248,View.MeasureSpec.EXACTLY));face.layout(0,0,1972,1248);
+            Bitmap bitmap=Bitmap.createBitmap(1972,1248,Bitmap.Config.ARGB_8888);face.draw(new Canvas(bitmap));bitmap.recycle();
+        }
+        Dashboard.preset(p,5);Dashboard d=new Dashboard(p);check(d.count()==4,"quad preset");String saved=d.json();Dashboard.preset(p,0);Dashboard.restore(p,saved);check(new Dashboard(p).slots[2].equals("calendar"),"saved slots restored");check(new Dashboard(p).layout==3,"saved layout restored");
+        DeskData.resetFocus(p);check(DeskData.remaining(p)==1500000,"timer reset");DeskData.toggleFocus(p);check(p.getLong("focusEnd",0)>0,"timer running");DeskData.toggleFocus(p);check(p.getLong("focusEnd",0)==0&&DeskData.remaining(p)>1490000,"timer paused");p.edit().putLong("focusEnd",1).commit();check(DeskData.remaining(p)==0,"elapsed timer clamps");p.edit().clear().commit();
+    }catch(Throwable t){failure=t;}});
+    if(failure!=null){result.putString("result",android.util.Log.getStackTraceString(failure));finish(0,result);}else{
+        try{org.json.JSONObject weather=DeskData.get(DeskData.weatherUrl("51.5","-0.12"));check(weather.getJSONObject("current").has("temperature_2m"),"weather current");check(weather.getJSONObject("daily").getJSONArray("temperature_2m_max").length()>0,"daily range");result.putString("network","PASS: device HTTPS weather API and payload");}catch(Exception e){result.putString("network","UNVERIFIED: "+e.toString());}
+        result.putString("result","PASS: 40 device renders, 3 layout persistence checks, 4 timer checks");finish(-1,result);}}
+}

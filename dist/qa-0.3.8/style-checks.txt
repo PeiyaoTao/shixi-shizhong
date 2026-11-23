@@ -1,0 +1,3 @@
+INSTRUMENTATION_RESULT: passed=true
+INSTRUMENTATION_RESULT: result=PASS: 1347 style checks, 861 offscreen renders, 36 non-clock styles
+INSTRUMENTATION_CODE: -1

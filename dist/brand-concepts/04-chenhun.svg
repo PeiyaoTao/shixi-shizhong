@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 72 72">
+  <title>晨昏时钟</title>
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#252145"/><stop offset="1" stop-color="#472D58"/>
+    </linearGradient>
+    <linearGradient id="day" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#FFD58D"/><stop offset="1" stop-color="#F39D78"/>
+    </linearGradient>
+  </defs>
+  <rect width="72" height="72" rx="16" fill="url(#sky)"/>
+  <circle cx="36" cy="36" r="23" fill="#C4B5F9"/>
+  <path d="M13 36a23 23 0 0 1 46 0Z" fill="url(#day)"/>
+  <path d="M28 42l8-6V23" fill="none" stroke="#352647" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="36" cy="49" r="1.7" fill="#594679"/>
+</svg>

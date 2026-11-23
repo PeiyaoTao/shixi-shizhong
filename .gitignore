@@ -1,0 +1,30 @@
+# Gradle & Android build outputs
+.gradle/
+.build-cache/
+**/build/
+local.properties
+
+# Keystores & secrets
+*.jks
+*.keystore
+
+# IDE & OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Native & profiling
+.cxx/
+captures/
+*.hprof
+
+# Local test outputs & logs
+tests/out/
+*.log
+*.tmp
+*.bak
+
+# Local assistant attachments
+.codex-attachments/

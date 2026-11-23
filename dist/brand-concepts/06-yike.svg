@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 72 72">
+  <title>一刻时钟</title>
+  <rect width="72" height="72" rx="16" fill="#33281E"/>
+  <path d="M36 16a20 20 0 1 0 20 20" fill="none" stroke="#FAE6C4" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 13.5a23 23 0 0 1 18.5 18.5H40Z" fill="#FC9863"/>
+  <path d="M36 24v12h12" fill="none" stroke="#FAE6C4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="36" cy="48" r="1.5" fill="#BD9A76"/>
+</svg>

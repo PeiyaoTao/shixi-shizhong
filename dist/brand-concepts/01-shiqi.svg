@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="18 18 72 72">
+  <title>时栖时钟</title>
+  <defs><clipPath id="mask"><rect x="18" y="18" width="72" height="72" rx="16.2"/></clipPath></defs>
+  <g clip-path="url(#mask)">
+    <rect x="18" y="18" width="72" height="72" fill="#101E26"/>
+    <path fill="#183438" d="M54,25 A24,24 0,1 1,54,73 A24,24 0,1 1,54,25 Z"/>
+    <path fill="none" stroke="#B8E5C7" stroke-width="4.6" stroke-linecap="round" d="M77.182,42.788 A24,24 0,1 1,64.521,27.429"/>
+    <path fill="#F6CF87" d="M67.67,32.03 A3.3,3.3 0,1 1,74.27,32.03 A3.3,3.3 0,1 1,67.67,32.03 Z"/>
+    <path fill="none" stroke="#F1F8F2" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" d="M43.5,43 L54,49 L65.5,37"/>
+    <path fill="none" stroke="#B8E5C7" stroke-width="4.2" stroke-linecap="round" d="M44,81 L64,81"/>
+  </g>
+</svg>

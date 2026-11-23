@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 72 72">
+  <title>方寸时钟</title>
+  <rect width="72" height="72" rx="16" fill="#13274D"/>
+  <rect x="13" y="13" width="28" height="28" rx="8" fill="#80B7FF"/>
+  <rect x="45" y="13" width="14" height="28" rx="6" fill="#C3E7FD"/>
+  <rect x="13" y="45" width="28" height="14" rx="6" fill="#5269D6"/>
+  <rect x="45" y="45" width="14" height="14" rx="5" fill="#9CDEC8"/>
+  <path d="M27 19.5V27l5 3" fill="none" stroke="#13274D" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 21v12m-31 19h12" stroke="#233C72" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

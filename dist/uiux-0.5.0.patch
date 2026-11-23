@@ -1,0 +1,2350 @@
+--- before/app/src/androidTest/java/com/foldstandby/clock/DeskChecks.java
++++ after/app/src/androidTest/java/com/foldstandby/clock/DeskChecks.java
+@@ -10,10 +10,10 @@
+ public class DeskChecks extends SceneChecks {
+     private boolean sceneSuite,effectsSuite,weatherSuite,inputSuite,styleSuite,hourglassSuite,alarmSuite,workspaceSuite,timeSuite;
+     private Throwable failure;
+-    private boolean feedbackSuite;
+-    public void onCreate(Bundle arguments){feedbackSuite=arguments!=null&&"feedback".equals(arguments.getString("suite"));timeSuite=arguments!=null&&"time".equals(arguments.getString("suite"));workspaceSuite=arguments!=null&&"workspace".equals(arguments.getString("suite"));alarmSuite=arguments!=null&&"alarm".equals(arguments.getString("suite"));hourglassSuite=arguments!=null&&"hourglass".equals(arguments.getString("suite"));styleSuite=arguments!=null&&"styles".equals(arguments.getString("suite"));inputSuite=arguments!=null&&"inputs".equals(arguments.getString("suite"));weatherSuite=arguments!=null&&"weather".equals(arguments.getString("suite"));effectsSuite=arguments!=null&&"effects".equals(arguments.getString("suite"));sceneSuite=arguments!=null&&("scene".equals(arguments.getString("suite"))||"runtime".equals(arguments.getString("suite"))||"outer".equals(arguments.getString("suite")));super.onCreate(arguments);}
++    private boolean feedbackSuite,studioSuite;
++    public void onCreate(Bundle arguments){studioSuite=arguments!=null&&"studio".equals(arguments.getString("suite"));feedbackSuite=arguments!=null&&"feedback".equals(arguments.getString("suite"));timeSuite=arguments!=null&&"time".equals(arguments.getString("suite"));workspaceSuite=arguments!=null&&"workspace".equals(arguments.getString("suite"));alarmSuite=arguments!=null&&"alarm".equals(arguments.getString("suite"));hourglassSuite=arguments!=null&&"hourglass".equals(arguments.getString("suite"));styleSuite=arguments!=null&&"styles".equals(arguments.getString("suite"));inputSuite=arguments!=null&&"inputs".equals(arguments.getString("suite"));weatherSuite=arguments!=null&&"weather".equals(arguments.getString("suite"));effectsSuite=arguments!=null&&"effects".equals(arguments.getString("suite"));sceneSuite=arguments!=null&&("scene".equals(arguments.getString("suite"))||"runtime".equals(arguments.getString("suite"))||"outer".equals(arguments.getString("suite")));super.onCreate(arguments);}
+     private void check(boolean b,String name){if(!b)throw new AssertionError(name);}
+-    public void onStart(){if(feedbackSuite){Bundle result=FlipFeedbackChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(timeSuite){Bundle result=WorkspaceChecks.runTime(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(workspaceSuite){Bundle result=WorkspaceChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(alarmSuite){Bundle result=AlarmChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(hourglassSuite){Bundle result=SandglassChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(styleSuite){Bundle result=StyleChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(inputSuite){Bundle result=InputChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(weatherSuite){Bundle result=WeatherChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(effectsSuite){Bundle result=EffectsChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(sceneSuite){super.onStart();return;}Bundle result=new Bundle();runOnMainSync(()->{try{
++    public void onStart(){if(studioSuite){Bundle result=StudioChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(feedbackSuite){Bundle result=FlipFeedbackChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(timeSuite){Bundle result=WorkspaceChecks.runTime(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(workspaceSuite){Bundle result=WorkspaceChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(alarmSuite){Bundle result=AlarmChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(hourglassSuite){Bundle result=SandglassChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(styleSuite){Bundle result=StyleChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(inputSuite){Bundle result=InputChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(weatherSuite){Bundle result=WeatherChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(effectsSuite){Bundle result=EffectsChecks.run(this);finish(result.getBoolean("passed")?-1:0,result);return;}if(sceneSuite){super.onStart();return;}Bundle result=new Bundle();runOnMainSync(()->{try{
+         Context context=getTargetContext();SharedPreferences p=context.getSharedPreferences("render_tests",0);p.edit().clear().commit();
+         for(int layout=0;layout<4;layout++)for(String type:Dashboard.TYPES){
+             p.edit().putInt("layout",layout).putString("slot0",type).putString("slot1",type).putString("slot2",type).putString("slot3",type).commit();
+--- before/app/src/androidTest/java/com/foldstandby/clock/SceneChecks.java
++++ after/app/src/androidTest/java/com/foldstandby/clock/SceneChecks.java
+@@ -58,10 +58,10 @@
+         MainActivity a=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).putExtra("uiCheck",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();
+         try{
+             sync(()->a.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+-            sync(()->{find(a.getWindow().getDecorView(),"编辑").performClick();find(a.getWindow().getDecorView(),"配色").performClick();check(a.colorEditorForCheck()!=null,"palette is embedded in the editor");find(a.getWindow().getDecorView(),"冰川").performClick();Scene.Page p=a.draft.pages.get(0);check(ColorThemes.matches(p.slots[0].theme,1),"preset applies a complete color combination");find(a.getWindow().getDecorView(),"自定义").performClick();android.widget.EditText e=a.colorEditorForCheck().hexInput();check(e!=null,"inline HEX input exists");e.setText("#47A1F2");check(a.draft.color(p,p.slots[0],"time",false,false)==0xff47a1f2,"HEX changes the model without leaving preview");});waitForIdleSync();android.os.SystemClock.sleep(150);sync(()->{ClockFace preview=findFace(a.getWindow().getDecorView());android.graphics.Rect visible=new android.graphics.Rect();check(preview.getGlobalVisibleRect(visible)&&visible.height()==preview.getHeight(),"live preview is fully visible while selecting a color: "+visible+" / "+preview.getHeight());android.widget.EditText e=a.colorEditorForCheck().hexInput();e.requestFocus();a.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(e,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
++            sync(()->{find(a.getWindow().getDecorView(),"内容").performClick();find(a.getWindow().getDecorView(),"配色").performClick();check(a.colorEditorForCheck()!=null,"palette is embedded in the editor");find(a.getWindow().getDecorView(),"冰川").performClick();Scene.Page p=a.draft.pages.get(0);check(ColorThemes.matches(p.slots[0].theme,1),"preset applies a complete color combination");find(a.getWindow().getDecorView(),"自定义").performClick();android.widget.EditText e=a.colorEditorForCheck().hexInput();check(e!=null,"inline HEX input exists");e.setText("#47A1F2");check(a.draft.color(p,p.slots[0],"time",false,false)==0xff47a1f2,"HEX changes the model without leaving preview");});waitForIdleSync();android.os.SystemClock.sleep(150);sync(()->{ClockFace preview=findFace(a.getWindow().getDecorView());android.graphics.Rect visible=new android.graphics.Rect();check(preview.getGlobalVisibleRect(visible)&&visible.height()==preview.getHeight(),"live preview is fully visible while selecting a color: "+visible+" / "+preview.getHeight());android.widget.EditText e=a.colorEditorForCheck().hexInput();e.requestFocus();a.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(e,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
+             android.os.SystemClock.sleep(600);screen("runtime-keyboard.png");sync(()->{ClockFace preview=findFace(a.getWindow().getDecorView());android.graphics.Rect visible=new android.graphics.Rect();check(preview.getGlobalVisibleRect(visible)&&visible.height()==preview.getHeight(),"keyboard keeps live preview visible");android.widget.EditText input=a.colorEditorForCheck().hexInput();check(input.getGlobalVisibleRect(visible)&&visible.height()==input.getHeight(),"keyboard keeps entire HEX input visible: "+visible+" / "+input.getHeight()+" focus="+input.hasFocus());});
+             sync(()->a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));android.os.SystemClock.sleep(700);waitForIdleSync();
+-            sync(()->{android.widget.EditText e=a.colorEditorForCheck().hexInput();check(e.getText().toString().equals("#47A1F2"),"inline HEX draft survives rotation");e.setText("invalid");check(e.getError()!=null,"invalid HEX remains a field error");e.setText("#47A1F2");a.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(e.getWindowToken(),0);Scene.Page p=a.draft.pages.get(0);Scene persisted=Scene.load(getTargetContext().getSharedPreferences("ui_checks",0));check(persisted.color(persisted.pages.get(0),persisted.pages.get(0).slots[0],"time",false,false)==0xff47a1f2,"valid palette edits save automatically");find(a.getWindow().getDecorView(),"页面").performClick();find(a.getWindow().getDecorView(),"2  日历").performClick();find(a.getWindow().getDecorView(),"设为主页").performClick();String id=a.draft.home;check(a.draft.home.equals(id),"home selected in page controls");});waitForIdleSync();android.os.SystemClock.sleep(250);
++            sync(()->{android.widget.EditText e=a.colorEditorForCheck().hexInput();check(e.getText().toString().equals("#47A1F2"),"inline HEX draft survives rotation");e.setText("invalid");check(e.getError()!=null,"invalid HEX remains a field error");e.setText("#47A1F2");a.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(e.getWindowToken(),0);Scene.Page p=a.draft.pages.get(0);Scene persisted=Scene.load(getTargetContext().getSharedPreferences("ui_checks",0));check(persisted.color(persisted.pages.get(0),persisted.pages.get(0).slots[0],"time",false,false)==0xff47a1f2,"valid palette edits save automatically");a.selectForCheck(2,0);try{java.lang.reflect.Method show=MainActivity.class.getDeclaredMethod("show");show.setAccessible(true);show.invoke(a);java.lang.reflect.Method select=MainActivity.class.getDeclaredMethod("selectPageInPlace",int.class,int.class,boolean.class,boolean.class);select.setAccessible(true);select.invoke(a,1,0,false,false);java.lang.reflect.Method menu=MainActivity.class.getDeclaredMethod("showPageMenu");menu.setAccessible(true);menu.invoke(a);java.lang.reflect.Field field=MainActivity.class.getDeclaredField("studioDialog");field.setAccessible(true);android.app.Dialog dialog=(android.app.Dialog)field.get(a);android.widget.ListView options=((android.app.AlertDialog)dialog).getListView();options.performItemClick(null,1,options.getAdapter().getItemId(1));dialog.dismiss();}catch(Exception error){throw new AssertionError(error);}String id=a.draft.home;check(a.draft.home.equals(id),"home selected in page controls");});waitForIdleSync();android.os.SystemClock.sleep(250);
+             sync(()->a.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));android.os.SystemClock.sleep(700);waitForIdleSync();
+             String first=a.draft.pages.get(0).id,second=a.draft.pages.get(1).id,chosen=a.draft.home;
+             screen("runtime-pages-before.png");dragPage(a,first,second);waitForIdleSync();android.os.SystemClock.sleep(350);screen("runtime-pages-after.png");
+--- before/app/src/androidTest/java/com/foldstandby/clock/StudioChecks.java
++++ after/app/src/androidTest/java/com/foldstandby/clock/StudioChecks.java
+@@ -0,0 +1,143 @@
++package com.foldstandby.clock;
++
++import android.app.*;
++import android.content.*;
++import android.content.pm.ActivityInfo;
++import android.graphics.*;
++import android.os.*;
++import android.view.*;
++import android.widget.*;
++import java.io.*;
++import java.lang.reflect.*;
++import java.util.*;
++import org.json.*;
++
++/** Isolated editor regression: real Android measurement, local recovery and keyboard/rotation. */
++final class StudioChecks {
++    private final Instrumentation runner;
++    private Context context; private SharedPreferences prefs; private MainActivity live;
++    private int checks,renders; private File output; private String activeCase="model";
++    StudioChecks(Instrumentation runner){this.runner=runner;}
++    private void check(boolean b,String label){checks++;if(!b)throw new AssertionError(label+" ["+activeCase+"]");}
++    private Object call(Object target,String method,Class<?>[] types,Object...args){
++        try{Method m=target.getClass().getDeclaredMethod(method,types);m.setAccessible(true);return m.invoke(target,args);}
++        catch(Exception e){throw new AssertionError(method,e);}
++    }
++    private Object call(Object target,String method){return call(target,method,new Class<?>[0]);}
++    private void set(Object target,String field,Object value){
++        try{Field f=target.getClass().getDeclaredField(field);f.setAccessible(true);f.set(target,value);}catch(Exception e){throw new AssertionError(e);}
++    }
++    private Object get(Object target,String field){
++        try{Field f=target.getClass().getDeclaredField(field);f.setAccessible(true);return f.get(target);}catch(Exception e){throw new AssertionError(e);}
++    }
++    private void sync(Runnable action){Throwable[] error={null};runner.runOnMainSync(()->{try{action.run();}catch(Throwable t){error[0]=t;}});if(error[0]!=null)throw new AssertionError(error[0]);}
++    static Bundle run(Instrumentation runner){return new StudioChecks(runner).run();}
++    private Bundle run(){
++        context=runner.getTargetContext();prefs=context.getSharedPreferences("ui_checks",0);Map<String,?> original=prefs.getAll();
++        output=new File(context.getFilesDir(),"qa-0.5.0");output.mkdirs();Bundle result=new Bundle();
++        try{
++            sync(()->{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",false).putBoolean("studio_guided",true).commit();models();layouts();});
++            runtime();result.putBoolean("passed",true);result.putString("result","PASS: "+checks+" studio checks, "+renders+" renders; keyboard, rotation, selection, undo and recovery");
++        }catch(Throwable t){result.putBoolean("passed",false);result.putString("result",android.util.Log.getStackTraceString(t));}
++        finally{sync(()->{if(live!=null)live.finish();SharedPreferences.Editor e=prefs.edit().clear();for(Map.Entry<String,?> entry:original.entrySet()){Object v=entry.getValue();String k=entry.getKey();if(v instanceof String)e.putString(k,(String)v);else if(v instanceof Boolean)e.putBoolean(k,(Boolean)v);else if(v instanceof Integer)e.putInt(k,(Integer)v);else if(v instanceof Long)e.putLong(k,(Long)v);else if(v instanceof Float)e.putFloat(k,(Float)v);else if(v instanceof Set)e.putStringSet(k,new HashSet<>((Set<String>)v));}e.commit();});}
++        return result;
++    }
++    private Scene sample(){
++        Scene s=Scene.load(prefs);s.pages.get(0).layout=3;s.pages.get(0).autoName=false;s.pages.get(0).name="我的书桌 · 一个用于检查窄屏换行与省略的很长页面名称";
++        s.pages.get(0).slots[1].setType("weather");s.pages.get(0).slots[2].setType("todo");TodoItems.add(s.pages.get(0).slots[2],"保留事项");
++        s.home=s.pages.get(0).id;s.ownNightColors=true;return s;
++    }
++    private void models(){
++        Scene s=sample();Scene.Page page=s.pages.get(0);Scene.Component c=page.slots[0];
++        Scene.put(s.nightTheme,"time",0xffff6622);Scene.put(c.theme,"time",0xff44ff88);
++        check(s.color(page,c,"time",true,false)==0xffff6622,"day override does not cover night");
++        Scene.put(c.nightTheme,"time",0xffdd7799);check(s.color(page,c,"time",true,false)==0xffdd7799,"local night override");
++        Scene copy=s.copy();check(Boolean.TRUE.equals(copy.ownNightColors),"night enabled state follows snapshot");
++        check(copy.color(copy.pages.get(0),copy.pages.get(0).slots[0],"time",true,false)==0xffdd7799,"night override follows snapshot");
++        try{JSONObject legacy=new JSONObject(s.json());legacy.put("version",3);Scene old=Scene.parse(legacy.toString());check(old.color(old.pages.get(0),old.pages.get(0).slots[0],"time",true,false)==0xff44ff88,"legacy local night appearance preserved");}catch(JSONException e){throw new AssertionError(e);}
++        Scene.Component todo=page.slots[2];todo.setType("clock");todo.setType("todo");check(TodoItems.all(todo).length()==1,"component switch retains tasks");
++        page.layout=0;Scene restored=s.copy();restored.pages.get(0).layout=3;check(TodoItems.all(restored.pages.get(0).slots[2]).length()==1,"hidden layout region retains data");
++        s.save(prefs);MainActivity editor=new MainActivity();editor.prepareForCheck(context);
++        String before=editor.draft.json();Scene.put(editor.draft.pages.get(0).slots[0].options,"scale",110);call(editor,"changed");
++        editor.beginEdit();for(int scale:new int[]{112,115,120}){Scene.put(editor.draft.pages.get(0).slots[0].options,"scale",scale);call(editor,"changed");}editor.endEdit();
++        EditHistory history=(EditHistory)get(editor,"history");String previous=history.undo();call(editor,"restoreEditorState",new Class[]{String.class},previous);
++        check(editor.draft.pages.get(0).slots[0].options.optInt("scale")==110,"one undo reverses complete slider drag");
++        previous=history.undo();call(editor,"restoreEditorState",new Class[]{String.class},previous);check(editor.draft.json().equals(before),"second undo restores previous model");
++        prefs.edit().putString("scene_saved_keep",editor.draft.json()).commit();
++        call(editor,"saveRecoveryPoint",new Class[]{String.class},"测试恢复点");String points=prefs.getString("studio_recovery","");
++        prefs.edit().remove("scene_saved_keep").commit();
++        MainActivity reopened=new MainActivity();reopened.prepareForCheck(context);
++        try{String state=new JSONArray(points).getJSONObject(0).getString("state");call(reopened,"restoreEditorState",new Class[]{String.class},state);check(prefs.contains("scene_saved_keep"),"persistent recovery restores deleted snapshot");}catch(JSONException e){throw new AssertionError(e);}
++        sample().save(prefs);
++    }
++    private void draw(View view,int w,int h,String name){
++        view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h);view.getViewTreeObserver().dispatchOnPreDraw();
++        Bitmap image=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));renders++;
++        if(name!=null)try(FileOutputStream stream=new FileOutputStream(new File(output,name+".png"))){image.compress(Bitmap.CompressFormat.PNG,100,stream);}catch(IOException e){throw new AssertionError(e);}image.recycle();
++    }
++    private void bounds(View view){
++        if(!(view instanceof ViewGroup))return;ViewGroup group=(ViewGroup)view;
++        for(int i=0;i<group.getChildCount();i++){
++            View child=group.getChildAt(i);if(child.getVisibility()!=View.VISIBLE)continue;
++            if(!(group instanceof HorizontalScrollView))check(child.getLeft()>=-1&&child.getRight()<=group.getWidth()+1,"child width "+child.getClass().getSimpleName()+" in "+group.getClass().getSimpleName()+" "+child.getLeft()+".."+child.getRight()+"/"+group.getWidth());
++            if(!(group instanceof ScrollView))check(child.getTop()>=-1&&child.getBottom()<=group.getHeight()+1,"child height "+child.getClass().getSimpleName()+" in "+group.getClass().getSimpleName()+" tag="+group.getTag()+" "+child.getTop()+".."+child.getBottom()+"/"+group.getHeight());
++            bounds(child);
++        }
++    }
++    private void layouts(){
++        MainActivity editor=new MainActivity();editor.prepareForCheck(context);
++        int[][] windows={{320,480},{360,500},{400,820},{820,400},{876,320},{700,980},{980,700},{820,1088},{580,620},{1600,900}};
++        float density=context.getResources().getDisplayMetrics().density;
++        for(float font:new float[]{1,1.3f,2.08f})for(int[] window:windows)for(boolean browse:new boolean[]{true,false})for(int panel=0;panel<3;panel++){
++            activeCase=window[0]+"x"+window[1]+" font="+font+" browse="+browse+" panel="+panel;
++            prefs.edit().putFloat("uiFontScale",font).commit();set(editor,"browsingPages",browse);set(editor,"studioPanel",panel);
++            String name=font==1&&panel==0&&!browse?"editor-"+window[0]+"x"+window[1]:null;
++            View root=editor.createUi(window[0],window[1]);draw(root,Math.round(window[0]*density),Math.round(window[1]*density),name);try{bounds(root);}catch(AssertionError e){draw(root,Math.round(window[0]*density),Math.round(window[1]*density),"failure-layout");throw e;}
++            View body=root.findViewWithTag("studio:body");check(body!=null&&((View)body.getParent()).getHeight()>30*density,"editor remains scrollable");
++            ClockFace face=face(root);check(face!=null&&face.getHeight()>0,"preview remains visible");
++        }
++        prefs.edit().putFloat("uiFontScale",1).commit();
++        for(int[] size:new int[][]{{400,820},{820,400},{980,700},{700,980}})for(boolean horizontal:new boolean[]{false,true})for(boolean navigation:new boolean[]{false,true}){
++            int w=size[0],h=size[1];activeCase="fold "+w+"x"+h+" horizontal="+horizontal+" navigation="+navigation;Rect fold=horizontal?new Rect(0,Math.round(h*.45f*density),Math.round(w*density),Math.round(h*.45f*density)+8):new Rect(Math.round(w*.43f*density),0,Math.round(w*.43f*density)+8,Math.round(h*density));
++            editor.foldForCheck(fold);editor.navigationForCheck(navigation);View root=editor.createUi(w,h);draw(root,Math.round(w*density),Math.round(h*density),!navigation?"fold-"+w+"x"+h+"-"+horizontal:null);bounds(root);
++            ClockFace preview=face(root);Rect frame=position(preview,root);check(!Rect.intersects(frame,fold),"preview avoids hinge");
++            View body=root.findViewWithTag("studio:body");Rect detail=position((View)body.getParent(),root);check(!Rect.intersects(detail,fold),"editor avoids hinge");
++        }
++        for(boolean vertical:new boolean[]{false,true}){
++            Rect fold=vertical?new Rect(UiKit.dp(context,300),0,UiKit.dp(context,304),UiKit.dp(context,980)):new Rect(0,UiKit.dp(context,440),UiKit.dp(context,700),UiKit.dp(context,444));
++            editor.foldForCheck(fold);editor.navigationForCheck(false);View resized=editor.createUi(700,980);draw(resized,UiKit.dp(context,700),UiKit.dp(context,500),"fold-resized-"+vertical);bounds(resized);
++            check(!Rect.intersects(position((View)resized.findViewWithTag("studio:body").getParent(),resized),fold),"resized editor avoids hinge");
++        }
++        Rect lowFold=new Rect(0,UiKit.dp(context,120),UiKit.dp(context,700),UiKit.dp(context,124));editor.foldForCheck(lowFold);set(editor,"browsingPages",true);
++        View lower=editor.createUi(700,800);draw(lower,UiKit.dp(context,700),UiKit.dp(context,300),"fold-low-ime");bounds(lower);check(!Rect.intersects(position((View)lower.findViewWithTag("studio:body").getParent(),lower),lowFold),"low hinge IME uses correct lower region coordinates");
++        editor.foldForCheck(null);editor.navigationForCheck(false);
++        set(editor,"browsingPages",false);set(editor,"studioPanel",2);
++        View imeSized=editor.createUi(400,820);draw(imeSized,UiKit.dp(context,400),UiKit.dp(context,260),"editor-ime-small");bounds(imeSized);
++        check(((View)imeSized.findViewWithTag("studio:body").getParent()).getHeight()>=UiKit.dp(context,48),"short IME editor retains usable scroll area");
++        set(editor,"portraitStyleScreen",true);for(int[] size:new int[][]{{320,480},{820,400},{700,980}}){View root=editor.createUi(size[0],size[1]);draw(root,UiKit.dp(context,size[0]),UiKit.dp(context,size[1]),"selector-"+size[0]+"x"+size[1]);bounds(root);}
++    }
++    private Rect position(View v,View root){Rect rect=new Rect(0,0,v.getWidth(),v.getHeight());((ViewGroup)root).offsetDescendantRectToMyCoords(v,rect);return rect;}
++    private ClockFace face(View view){if(view instanceof ClockFace)return(ClockFace)view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){ClockFace found=face(((ViewGroup)view).getChildAt(i));if(found!=null)return found;}return null;}
++    private View text(View root,String value){if(root instanceof TextView&&((TextView)root).getText().toString().equals(value))return root;if(root instanceof ViewGroup)for(int i=0;i<((ViewGroup)root).getChildCount();i++){View found=text(((ViewGroup)root).getChildAt(i),value);if(found!=null)return found;}return null;}
++    private void runtime()throws Exception{
++        try{JSONObject old=new JSONObject(sample().json());old.put("version",3);old.remove("ownNightColors");prefs.edit().putString(Scene.KEY,old.toString()).putBoolean("nightOwnColors",true).putFloat("uiFontScale",1).commit();}catch(JSONException e){throw new AssertionError(e);}
++        live=(MainActivity)runner.startActivitySync(new Intent(context,MainActivity.class).putExtra("uiCheck",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));runner.waitForIdleSync();
++        sync(()->{check(Boolean.TRUE.equals(live.draft.ownNightColors),"legacy night setting survives creation and resume");check(!((EditHistory)get(live,"history")).canUndo(),"normalization does not create phantom history");live.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);live.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);});
++        SystemClock.sleep(700);runner.waitForIdleSync();
++        sync(()->{set(live,"browsingPages",false);set(live,"studioPanel",2);call(live,"show");text(live.getWindow().getDecorView(),"自定义").performClick();});runner.waitForIdleSync();SystemClock.sleep(200);
++        sync(()->{EditText input=live.colorEditorForCheck().hexInput();input.requestFocus();input.setText("#48A1F2");live.getSystemService(android.view.inputmethod.InputMethodManager.class).showSoftInput(input,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});
++        SystemClock.sleep(900);runner.waitForIdleSync();
++        sync(()->{EditText input=live.colorEditorForCheck().hexInput();Rect visible=new Rect();check(live.getWindow().getDecorView().getRootWindowInsets().isVisible(WindowInsets.Type.ime()),"real IME is visible");check(input.getGlobalVisibleRect(visible)&&visible.height()==input.getHeight(),"HEX visible above keyboard");check(face(live.getWindow().getDecorView()).getHeight()>0,"keyboard retains preview");draw(live.getWindow().getDecorView(),live.getWindow().getDecorView().getWidth(),live.getWindow().getDecorView().getHeight(),"runtime-keyboard-portrait");live.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);});
++        SystemClock.sleep(900);runner.waitForIdleSync();
++        sync(()->{check(live.colorEditorForCheck().hexInput().getText().toString().equals("#48A1F2"),"color draft survives rotation");live.getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(live.colorEditorForCheck().hexInput().getWindowToken(),0);call(live,"openSelector",new Class[]{boolean.class},true);});
++        runner.waitForIdleSync();
++        sync(()->{View type=live.getWindow().getDecorView().findViewWithTag("component:weather");check(type!=null,"explicit component selector");type.performClick();check(live.draft.pages.get(0).slots[0].type.equals("weather"),"component selector replaces current region");call(live,"undoEdit");check(live.draft.pages.get(0).slots[0].type.equals("clock"),"undo returns previous component");});
++        sync(()->{int count=live.draft.pages.size();String home=live.draft.home;call(live,"showPageMenu");AlertDialog menu=(AlertDialog)get(live,"studioDialog");ListView list=menu.getListView();int last=list.getCount()-1;list.performItemClick(null,last,list.getAdapter().getItemId(last));check(live.draft.pages.size()==count-1,"page menu deletes page");call(live,"undoEdit");check(live.draft.pages.size()==count&&live.draft.home.equals(home),"undo restores page position and home identity");});
++        sync(()->call(live,"showLayoutPicker",new Class[]{boolean.class},true));runner.waitForIdleSync();
++        sync(()->{InputDialog picker=(InputDialog)get(live,"inputDialog");check(picker!=null&&picker.isShowing(),"visual layout chooser");View choice=text(picker.getWindow().getDecorView(),"使用双栏");check(choice!=null,"layout card has explicit action");int old=live.draft.pages.size();choice.performClick();check(live.draft.pages.size()==old+1&&live.draft.pages.get(old).layout==1,"layout selection creates complete page");call(live,"undoEdit");check(live.draft.pages.size()==old,"undo removes added page");});
++        Instrumentation.ActivityMonitor monitor=runner.addMonitor(ClockActivity.class.getName(),null,false);
++        sync(()->{set(live,"pageId",live.draft.pages.get(1).id);set(live,"previewNight",true);call(live,"launchFullscreenPreview");});
++        ClockActivity preview=(ClockActivity)runner.waitForMonitorWithTimeout(monitor,5000);runner.removeMonitor(monitor);check(preview!=null,"fullscreen opened");runner.waitForIdleSync();
++        sync(()->{ClockFace f=face(preview.getWindow().getDecorView());check(Boolean.TRUE.equals(f.nightPreview),"fullscreen continues selected night preview");check(f.pageIdForEditor().equals(live.draft.pages.get(1).id),"fullscreen continues selected page");preview.finish();});
++    }
++}
+--- before/app/src/androidTest/java/com/foldstandby/clock/WorkspaceChecks.java
++++ after/app/src/androidTest/java/com/foldstandby/clock/WorkspaceChecks.java
+@@ -116,7 +116,7 @@
+                 check(content.getLeft()==0&&content.getWidth()==w,"portrait keeps overlay "+label);
+                 check(unchanged.getWidth()==previewWidth&&unchanged.getHeight()==previewHeight,"portrait drawer preserves preview space "+label);
+             }
+-            check(find(open,"全屏待机预览")!=null&&find(open,"切换夜间预览")!=null,"navigation owns global preview actions");
++            check(find(open,"全屏待机预览")==null,"preview actions are local to the canvas");
+             editor.navigationForCheck(false);
+         }
+         prefs.edit().putFloat("uiFontScale",1f).commit();
+@@ -129,8 +129,8 @@
+                 check(find(setting,"← 返回页面")==null,"settings have no return button");
+                 View detail=setting.findViewWithTag("settings:detail"),menu=setting.findViewWithTag("settings:categories");
+                 check(detail!=null&&find(setting,"☰")!=null,"settings have navigation and details");
+-                if(window[0]>window[1])check(menu!=null&&detail.getLeft()>=menu.getRight(),"landscape settings have parallel category/detail panes");
+-                else check(menu==null,"portrait settings use category selector");
++                if(menu!=null)check(detail.getLeft()>=menu.getRight(),"wide settings have parallel category/detail panes");
++                else check(detail.getWidth()>0,"compact settings use a reachable category selector");
+                 editor.navigationForCheck(true);View opened=editor.createUi(window[0],window[1]);render(opened,w,h,null).recycle();
+                 check(face(opened)==null,"settings menu never creates a preview");
+                 View content=opened.findViewWithTag("workspace:content"),drawer=opened.findViewWithTag("navigation:drawer");
+@@ -160,7 +160,7 @@
+         Scene scene=sample();Scene.Page page=scene.pages.get(0);Scene.Component comp=page.slots[0];
+         int legacy=0xffef48e8,green=0xff43f590,warm=0xffff7733,secondary=0xff667799;
+         Scene.put(scene.theme,"time",green);Scene.put(scene.theme,"secondary",secondary);
+-        Scene.put(scene.nightTheme,"time",warm);prefs.edit().putBoolean("nightOwnColors",true).commit();
++        Scene.put(scene.nightTheme,"time",warm);scene.ownNightColors=true;prefs.edit().putBoolean("nightOwnColors",true).commit();
+         for(org.json.JSONObject theme:new org.json.JSONObject[]{scene.theme,page.theme,comp.theme,scene.nightTheme})Scene.put(theme,"separator",legacy);
+         Scene migrated=scene.copy();
+         check(!migrated.theme.has("separator")&&!migrated.nightTheme.has("separator")&&!migrated.pages.get(0).theme.has("separator")&&!migrated.pages.get(0).slots[0].theme.has("separator"),"old separator overrides removed at every scope");
+@@ -236,7 +236,7 @@
+         nativeEdgeDrag(moved,true);sync(()->{check(activity.draft.index(moved)==0,"native edge drag moves last page to first");check(Scene.load(prefs).homeIndex()==0,"reorder automatically persisted with home identity");});
+         nativeEdgeDrag(moved,false);sync(()->{check(activity.draft.index(moved)==7,"native edge drag moves first page to last");check(Scene.load(prefs).homeIndex()==7,"reverse reorder automatically persisted");});
+         Instrumentation.ActivityMonitor monitor=runner.addMonitor(ClockActivity.class.getName(),null,false);
+-        sync(()->{click("☰");click("全屏待机预览");});
++        sync(()->click("⛶"));
+         ClockActivity fullscreen=(ClockActivity)runner.waitForMonitorWithTimeout(monitor,5000);runner.removeMonitor(monitor);
+         check(fullscreen!=null,"navigation opens fullscreen preview");runner.waitForIdleSync();SystemClock.sleep(300);
+         sync(()->{ClockFace preview=face(fullscreen.getWindow().getDecorView());gesture(preview,250,112,250,112,100);
+@@ -244,11 +244,11 @@
+         SystemClock.sleep(350);runner.waitForIdleSync();
+         sync(()->check(TodoItems.all(activity.draft.pages.get(7).slots[0]).optJSONObject(2).optBoolean("done"),"returning from fullscreen refreshes editor completion"));
+         sync(()->{click("☰");check(activity.getWindow().getDecorView().findViewWithTag("navigation:drawer")!=null,"menu opens left overlay");activity.onBackPressed();check(activity.getWindow().getDecorView().findViewWithTag("navigation:drawer")==null,"Back closes drawer");click("配色");click("自定义");activity.colorEditorForCheck().hexInput().setText("#47A1F2");});
+-        sync(()->{Scene loaded=Scene.load(prefs);Scene.Page p=loaded.pages.get(loaded.homeIndex());check(loaded.color(p,p.slots[0],"time",false,false)==0xff47a1f2,"valid color automatically persisted");activity.colorEditorForCheck().hexInput().setText("#12");Scene last=Scene.load(prefs);Scene.Page q=last.pages.get(last.homeIndex());check(last.color(q,q.slots[0],"time",false,false)==0xff47a1f2,"incomplete color cannot overwrite saved value");activity.colorEditorForCheck().hexInput().setText("#47A1F2");activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);});
++        sync(()->{Scene loaded=Scene.load(prefs);Scene.Page p=loaded.pages.get(loaded.homeIndex());check(loaded.color(p,p.slots[0],"accent",false,false)==0xff47a1f2,"valid color automatically persisted");activity.colorEditorForCheck().hexInput().setText("#12");Scene last=Scene.load(prefs);Scene.Page q=last.pages.get(last.homeIndex());check(last.color(q,q.slots[0],"accent",false,false)==0xff47a1f2,"incomplete color cannot overwrite saved value");activity.colorEditorForCheck().hexInput().setText("#47A1F2");activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);});
+         SystemClock.sleep(750);runner.waitForIdleSync();
+         sync(()->{click("☰");View drawer=activity.getWindow().getDecorView().findViewWithTag("navigation:drawer");check(drawer!=null&&drawer.getLeft()==0,"portrait uses same left overlay");activity.onBackPressed();activity.finish();});SystemClock.sleep(250);
+         activity=(MainActivity)runner.startActivitySync(new Intent(context,MainActivity.class).putExtra("uiCheck",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));runner.waitForIdleSync();
+-        sync(()->{Scene.Page p=activity.draft.pages.get(activity.draft.homeIndex());check(activity.draft.color(p,p.slots[0],"time",false,false)==0xff47a1f2,"auto-saved color survives close and reopen");check(activity.draft.homeIndex()==7,"auto-saved page order survives reopen");});
++        sync(()->{Scene.Page p=activity.draft.pages.get(activity.draft.homeIndex());check(activity.draft.color(p,p.slots[0],"accent",false,false)==0xff47a1f2,"auto-saved color survives close and reopen");check(activity.draft.homeIndex()==7,"auto-saved page order survives reopen");});
+         sync(()->activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+         SystemClock.sleep(750);runner.waitForIdleSync();
+         sync(()->{click("☰");click("⚙ 待机与全局设置");View root=activity.getWindow().getDecorView();
+--- before/app/src/main/java/com/foldstandby/clock/AdaptiveLayout.java
++++ after/app/src/main/java/com/foldstandby/clock/AdaptiveLayout.java
+@@ -6,9 +6,14 @@
+     final int rail,left;
+     AdaptiveLayout(int width,int height,float fontScale){
+         shortWindow=height<480;
+-        int detailMin=(int)(300*Math.max(1f,fontScale*.85f));
+-        rail=width>=680?76:0;
+-        parallel=width-rail>=280+detailMin;
+-        left=parallel?Math.min(520,Math.max(280,(int)((width-rail)*.48f))):width;
++        int detailMin=(int)(290*Math.max(1f,fontScale*.85f));
++        rail=0;
++        parallel=width>=260+detailMin+22&&height>=230;
++        left=parallel?Math.min(width-detailMin-22,Math.min(520,Math.max(260,(int)(width*.44f)))):width;
++    }
++    static int previewHeight(int width,int height,boolean browsing,boolean expanded,boolean keyboard,float fontScale){
++        int reserve=Math.round(180*Math.max(1f,fontScale*.75f));
++        int target=keyboard?110:expanded?Math.round(height*.56f):browsing?Math.round(height*.44f):Math.min(230,Math.round(height*.30f));
++        return Math.max(76,Math.min(target,Math.max(76,height-reserve)));
+     }
+ }
+--- before/app/src/main/java/com/foldstandby/clock/ClockActivity.java
++++ after/app/src/main/java/com/foldstandby/clock/ClockActivity.java
+@@ -33,9 +33,9 @@
+         float faceAlpha=(night&&rawNight<.01f)?Math.max(.22f,Math.min(.95f,.15f+rawNight*85f)):1f;
+         if(Math.abs(face.getAlpha()-faceAlpha)>.01f)face.setAlpha(faceAlpha);
+         if(!checkMode)applyExtraDim(ClockActivity.this,prefs,night&&prefs.getBoolean("nightExtraDim",true),rawNight);
+-        boolean autoplay=!night&&prefs.getBoolean("autoplay",false);long interval=prefs.getInt("pageInterval",20)*1000L;
++        boolean autoplay=!previewMode&&!night&&prefs.getBoolean("autoplay",false);long interval=prefs.getInt("pageInterval",20)*1000L;
+         if(autoplay&&now-pageSince>=interval&&now-lastInteraction>=Math.max(30000,interval*2))changePage((page+1)%scene.pages.size(),true,false,1);
+-        int homeAfter=prefs.getInt("homeAfter",60);if(!autoplay&&homeAfter>0&&page!=scene.homeIndex()&&now-lastInteraction>=homeAfter*1000L)changePage(scene.homeIndex(),true,false,0);
++        int homeAfter=previewMode?0:prefs.getInt("homeAfter",60);if(!autoplay&&homeAfter>0&&page!=scene.homeIndex()&&now-lastInteraction>=homeAfter*1000L)changePage(scene.homeIndex(),true,false,0);
+         face.invalidate();
+         long delay=face.nextDelayMs();
+         if(automatic&&!StandbyService.resting&&now<=wakeGraceUntil)delay=Math.min(delay,Math.max(50L,wakeGraceUntil-now+20L));
+@@ -64,17 +64,18 @@
+             });
+         }
+     }
+-    public void onCreate(Bundle b){super.onCreate(b);checkMode=getIntent().getBooleanExtra("uiCheck",false);prefs=getSharedPreferences(checkMode?"ui_checks":"clock",0);prefs.registerOnSharedPreferenceChangeListener(prefsListener);currentInstance=this;automatic=getIntent().getBooleanExtra("auto",false);scene=Scene.parse(getIntent().getStringExtra("scenePreview"));previewMode=scene!=null;if(scene==null)scene=Scene.load(prefs);page=scene.homeIndex();sessionOpen=!checkMode;
++    public void onCreate(Bundle b){super.onCreate(b);checkMode=getIntent().getBooleanExtra("uiCheck",false);prefs=getSharedPreferences(checkMode?"ui_checks":"clock",0);prefs.registerOnSharedPreferenceChangeListener(prefsListener);currentInstance=this;applyLaunchIntent();sessionOpen=!checkMode;
+         applyOrientation();setShowWhenLocked(true);setTurnScreenOn(true);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);getWindow().getDecorView().setBackgroundColor(Color.BLACK);getWindow().setStatusBarColor(Color.BLACK);getWindow().setNavigationBarColor(Color.BLACK);getWindow().getDecorView().setSystemUiVisibility(5894);
+-        FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);face=new ClockFace(this,prefs);face.bind(scene,page);face.flipFeedbackEnabled=true;face.sceneChanged=()->scene.save(prefs);face.externalTick=true;face.pageSwipe=direction->{int next=page+direction;if(next>=0&&next<scene.pages.size())changePage(next,true,true,direction);};face.interaction=()->wake(false);root.addView(face,new FrameLayout.LayoutParams(-1,-1));
++        FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);face=new ClockFace(this,prefs);face.bind(scene,page);if(previewMode){page=scene.index(getIntent().getStringExtra("previewPage"));face.selectPage(page);if(getIntent().hasExtra("previewNight"))face.nightPreview=getIntent().getBooleanExtra("previewNight",false);}face.flipFeedbackEnabled=true;face.sceneChanged=()->scene.save(prefs);face.externalTick=true;face.pageSwipe=direction->{int next=page+direction;if(next>=0&&next<scene.pages.size())changePage(next,true,true,direction);};face.interaction=()->wake(false);root.addView(face,new FrameLayout.LayoutParams(-1,-1));
+         setContentView(root);updatePageDescription();
+         IntentFilter f=new IntentFilter();f.addAction(Intent.ACTION_SCREEN_ON);f.addAction(Intent.ACTION_SCREEN_OFF);registerReceiver(screen,f);receiverRegistered=true;wake(true);
+     }
+     private void updatePageDescription(){if(face!=null)face.setContentDescription((page+1)+"/"+scene.pages.size()+" · "+scene.pages.get(page).name);}
+     private void changePage(int next,boolean animate,boolean user,int direction){if(next<0||next>=scene.pages.size()||next==page)return;if(user)wake(false);page=next;pageSince=SystemClock.elapsedRealtime();updatePageDescription();int style=prefs.getInt("pageMotion",0);if(direction==0&&style==0)style=1;if(animate)face.animatePage(page,direction,style,prefs.getInt("pageMotionDuration",360));else face.selectPage(page);}
+-    private void wake(boolean home){if(face==null)return;PowerManager pm=getSystemService(PowerManager.class);if(!home&&pm!=null&&!pm.isInteractive())return;boolean wasSleeping=sleeping;sleeping=false;face.setMotionActive(true);if(!checkMode)StandbyService.leaveRest(this);setTurnScreenOn(true);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);h.removeCallbacks(clearTurnScreenOn);h.postDelayed(clearTurnScreenOn,1500);long now=SystemClock.elapsedRealtime();lastInteraction=now;if(home)DeskData.keyguardAt=0;if(home||wasSleeping){wakeGraceUntil=now+4000;activeSince=now;page=scene.homeIndex();pageSince=now;face.selectPage(page);updatePageDescription();}lastBrightness=-1;h.removeCallbacks(tick);h.post(tick);}
++    private void wake(boolean home){if(face==null)return;PowerManager pm=getSystemService(PowerManager.class);if(!home&&pm!=null&&!pm.isInteractive())return;boolean wasSleeping=sleeping;sleeping=false;face.setMotionActive(true);if(!checkMode)StandbyService.leaveRest(this);setTurnScreenOn(true);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);h.removeCallbacks(clearTurnScreenOn);h.postDelayed(clearTurnScreenOn,1500);long now=SystemClock.elapsedRealtime();lastInteraction=now;if(home)DeskData.keyguardAt=0;if(home||wasSleeping){wakeGraceUntil=now+4000;activeSince=now;page=previewMode?scene.index(getIntent().getStringExtra("previewPage")):scene.homeIndex();pageSince=now;face.selectPage(page);updatePageDescription();}lastBrightness=-1;h.removeCallbacks(tick);h.post(tick);}
+     private void rest(){sleeping=true;if(face!=null)face.setMotionActive(false);h.removeCallbacks(clearTurnScreenOn);setTurnScreenOn(false);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(!checkMode){applyExtraDim(this,prefs,false,0f);StandbyService.enterRest(this);}h.removeCallbacks(tick);}
+-    protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);automatic=i.getBooleanExtra("auto",false);if(!previewMode){scene=Scene.load(prefs);face.bind(scene,scene.homeIndex());}wake(true);applyOrientation();}
++    private void applyLaunchIntent(){automatic=getIntent().getBooleanExtra("auto",false);scene=Scene.parse(getIntent().getStringExtra("scenePreview"));previewMode=scene!=null;if(scene==null)scene=Scene.load(prefs);page=previewMode?scene.index(getIntent().getStringExtra("previewPage")):scene.homeIndex();if(face!=null){face.bind(scene,page);face.nightPreview=previewMode&&getIntent().hasExtra("previewNight")?getIntent().getBooleanExtra("previewNight",false):null;}}
++    protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);applyLaunchIntent();wake(true);applyOrientation();}
+     // The active cover panel can face a different way from the half carrying gravity.
+     // Keep landscape, letting the platform's display-aware sensor choose either direction.
+     private void applyOrientation(){setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);}
+--- before/app/src/main/java/com/foldstandby/clock/ClockFace.java
++++ after/app/src/main/java/com/foldstandby/clock/ClockFace.java
+@@ -84,6 +84,8 @@
+     private float downX,downY; private long downTime;
+     interface SlotTap{void tap(int slot);}
+     SlotTap slotTap;
++    int editorSlot=-1;
++    String pageIdForEditor(){return page==null?"":page.id;}
+     int previewPreset=-1;
+     boolean externalTick;
+     boolean managedRefresh;
+@@ -214,6 +216,11 @@
+                 p.setStyle(Paint.Style.FILL);
+             }
+             if(component.type.equals("clock"))clock(canvas,component);else render(canvas,config.slots[i]);canvas.restore();
++        }
++        if(slotTap!=null&&editorSlot>=0&&editorSlot<config.count()){
++            RectF area=new RectF(cells[editorSlot]);area.inset(2,2);p.setShader(null);p.setStyle(Paint.Style.STROKE);
++            p.setStrokeWidth(Math.max(2,getResources().getDisplayMetrics().density*1.5f));p.setColor(UiKit.ACCENT);
++            canvas.drawRoundRect(area,8,8,p);p.setStyle(Paint.Style.FILL);
+         }
+     }
+     private void render(Canvas c,String type){ZonedDateTime now=now();String date=now.format(FMT_DATE);
+--- before/app/src/main/java/com/foldstandby/clock/ComponentInspector.java
++++ after/app/src/main/java/com/foldstandby/clock/ComponentInspector.java
+@@ -68,20 +68,6 @@
+         int availWidthDp,
+         Host host
+     ) {
+-        LinearLayout styleCard = UiKit.card(c, container, "表盘样式", null);
+-        UiKit.chips(
+-            c,
+-            styleCard,
+-            availWidthDp,
+-            Scene.STYLE_NAMES,
+-            Arrays.asList(Scene.STYLES).indexOf(comp.style),
+-            n -> {
+-                comp.style = Scene.STYLES[n];
+-                host.onDraftChanged();
+-                host.onRebuild();
+-            }
+-        );
+-
+         LinearLayout fontCard = UiKit.card(c, container, "字形与大小", null);
+         if (!comp.style.equals("led") && !comp.style.equals("dot")) {
+             UiKit.choice(
+@@ -111,8 +97,7 @@
+             }
+         );
+ 
+-        LinearLayout typeCard = UiKit.card(c, container, "当前槽位组件", null);
+-        typeSwitcher(c, typeCard, comp, host);
++
+     }
+ 
+     private static void renderClockDetailGroup(
+@@ -161,11 +146,6 @@
+             LinearLayout dotCard = UiKit.card(c, container, "点阵参数", null);
+             UiKit.slider(c, dotCard, "点阵大小", o.optInt("radius", 4), 2, 7, "", v -> { Scene.put(o, "radius", v); host.onDraftChanged(); });
+             UiKit.toggle(c, dotCard, "方形点阵", o.optBoolean("square", false), v -> { Scene.put(o, "square", v); host.onDraftChanged(); });
+-        } else {
+-            LinearLayout digitalCard = UiKit.card(c, container, "极简数字显示参数", null);
+-            UiKit.toggle(c, digitalCard, "显示日期", comp.bool("date", true), v -> { Scene.put(comp.options, "date", v); host.onDraftChanged(); });
+-            UiKit.toggle(c, digitalCard, "显示秒数", comp.bool("seconds", false), v -> { Scene.put(comp.options, "seconds", v); host.onDraftChanged(); });
+-            UiKit.toggle(c, digitalCard, "24 小时制", comp.bool("h24", true), v -> { Scene.put(comp.options, "h24", v); host.onDraftChanged(); });
+         }
+     }
+ 
+@@ -198,36 +178,11 @@
+         Host host
+     ) {
+         LinearLayout baseCard = UiKit.card(c, container, "内容", null);
+-        typeSwitcher(c, baseCard, comp, host);
+-        UiKit.slider(
+-            c,
+-            baseCard,
+-            "显示大小",
+-            comp.options.optInt("scale", 100),
+-            75,
+-            125,
+-            "%",
+-            v -> {
+-                Scene.put(comp.options, "scale", v);
+-                host.onDraftChanged();
+-            }
+-        );
+-        if (!comp.type.equals("clock")) {
+-            LinearLayout styleCard = UiKit.card(c, container, "组件样式", null);
+-            UiKit.chips(c, styleCard, availWidthDp, ComponentStyles.names(comp.type),
+-                ComponentStyles.selectedIndex(comp), n -> {
+-                    ComponentStyles.select(comp, comp.type, n);
+-                    host.onDraftChanged();
+-                    host.onRebuild();
+-                });
+-
+-        }
+         if (comp.type.equals("clock")) {
+             UiKit.toggle(c, baseCard, "显示日期", comp.bool("date", true), v -> { Scene.put(comp.options, "date", v); host.onDraftChanged(); });
+             UiKit.toggle(c, baseCard, "显示秒数", comp.bool("seconds", false), v -> { Scene.put(comp.options, "seconds", v); host.onDraftChanged(); });
+             UiKit.toggle(c, baseCard, "24 小时制", comp.bool("h24", true), v -> { Scene.put(comp.options, "h24", v); host.onDraftChanged(); });
+         }
+-        UiKit.toggle(c, baseCard, "显示组件边框", comp.bool("card", false), v -> { Scene.put(comp.options, "card", v); host.onDraftChanged(); });
+ 
+         switch (comp.type) {
+             case "alarm":
+@@ -297,13 +252,14 @@
+             });
+             row.addView(done);
+             TextView item = UiKit.button(c, task.optString("text"), () ->
+-                new android.app.AlertDialog.Builder(c)
++                (c instanceof MainActivity?((MainActivity)c).alertForEditor():new android.app.AlertDialog.Builder(c))
+                     .setTitle(task.optString("text"))
+                     .setItems(new String[] { "修改内容", "删除" }, (d, which) -> {
+                         if (which == 1) {
+                             TodoItems.remove(comp, n);
+                             host.onDraftChanged();
+                             host.onRebuild();
++                            if(c instanceof MainActivity)((MainActivity)c).deletedForEditor("已删除待办");
+                         } else {
+                             host.onOpenTodoInput("待办内容", task.optString("text"), value -> {
+                                 TodoItems.edit(comp, n, value);
+@@ -326,7 +282,7 @@
+                 host.onRebuild();
+             })
+         );
+-        UiKit.toggle(c, card, "锁屏显示日程与待办详情", prefs.getBoolean("private", false), v -> prefs.edit().putBoolean("private", v).apply());
++        UiKit.toggle(c, card, "所有页面 · 锁屏显示日程与待办详情", prefs.getBoolean("private", false), v -> prefs.edit().putBoolean("private", v).apply());
+     }
+ 
+     private static void renderAlarmCard(Context c, LinearLayout container, Scene.Component comp, Host host) {
+@@ -370,7 +326,7 @@
+             granted,
+             host::onRequestCalendarPermission
+         );
+-        UiKit.toggle(c, card, "锁屏显示日程与待办详情", prefs.getBoolean("private", false), v -> prefs.edit().putBoolean("private", v).apply());
++        UiKit.toggle(c, card, "所有页面 · 锁屏显示日程与待办详情", prefs.getBoolean("private", false), v -> prefs.edit().putBoolean("private", v).apply());
+     }
+ 
+     private static void renderWeatherCard(
+@@ -380,7 +336,7 @@
+         Scene.Component comp,
+         Host host
+     ) {
+-        LinearLayout card = UiKit.card(c, container, "天气预报与城市", null);
++        LinearLayout card = UiKit.card(c, container, "天气预报与城市", "所有页面共用天气地点和温标");
+         UiKit.toggle(c, card, "显示明日预报", comp.bool("tomorrow", false), v -> { Scene.put(comp.options, "tomorrow", v); host.onDraftChanged(); });
+         UiKit.action(c, card, "使用当前位置", host::onUseCurrentLocation);
+         UiKit.action(c, card, "天气城市 · " + WeatherCities.simplified(prefs.getString("city", "未选择")), host::onOpenCitySearch);
+@@ -434,7 +390,7 @@
+         LinearLayout container,
+         Host host
+     ) {
+-        LinearLayout card = UiKit.card(c, container, "番茄专注计时", null);
++        LinearLayout card = UiKit.card(c, container, "番茄专注计时", "所有专注组件共用计时与时长");
+         String[] names = { "5 分钟", "15 分钟", "25 分钟", "45 分钟", "60 分钟" };
+         int[] values = { 5, 15, 25, 45, 60 };
+         int current = prefs.getInt("focusMinutes", 25);
+@@ -486,7 +442,7 @@
+             DeskData.batteryTempTenths / 10f
+         );
+         UiKit.note(c, card, summary);
+-        UiKit.toggle(c, card, "启用充电能量流与页面过渡动效", prefs.getBoolean("motion", true), v -> {
++        UiKit.toggle(c, card, "全局动效 · 充电能量流与页面过渡", prefs.getBoolean("motion", true), v -> {
+             prefs.edit().putBoolean("motion", v).apply();
+             host.onDraftChanged();
+         });
+--- before/app/src/main/java/com/foldstandby/clock/EditHistory.java
++++ after/app/src/main/java/com/foldstandby/clock/EditHistory.java
+@@ -0,0 +1,43 @@
++package com.foldstandby.clock;
++
++import java.util.ArrayList;
++
++/** Local editor history. A physical drag is one transaction, while every value can still autosave. */
++final class EditHistory {
++    private final ArrayList<String> undo = new ArrayList<>(), redo = new ArrayList<>();
++    private int depth;
++    private String before, after;
++    void begin() { depth++; }
++    void record(String oldState, String newState) {
++        if (oldState == null || oldState.equals(newState)) return;
++        if (depth > 0) { if (before == null) before = oldState; after = newState; redo.clear(); }
++        else push(oldState, newState);
++    }
++    void end() { if (depth > 0 && --depth == 0) flush(); }
++    void finish() { depth = 0; flush(); }
++    private void flush() { if (before != null && !before.equals(after)) push(before, after); before = after = null; }
++    private void push(String oldState, String newState) {
++        undo.add(oldState); undo.add(newState); redo.clear();
++        int size = 0; for (String s : undo) size += s.length();
++        while (undo.size() > 80 || size > 120000 && undo.size() > 2) { size -= undo.remove(0).length(); size -= undo.remove(0).length(); }
++    }
++    boolean canUndo() { return before != null && !before.equals(after) || !undo.isEmpty(); }
++    boolean canRedo() { return !redo.isEmpty(); }
++    String undo() {
++        finish(); if (undo.isEmpty()) return null;
++        String next = undo.remove(undo.size()-1), previous = undo.remove(undo.size()-1);
++        redo.add(previous); redo.add(next); return previous;
++    }
++    String redo() {
++        finish(); if (redo.isEmpty()) return null;
++        String next = redo.remove(redo.size()-1), previous = redo.remove(redo.size()-1);
++        undo.add(previous); undo.add(next); return next;
++    }
++    ArrayList<String> undoStates() { finish(); return new ArrayList<>(undo); }
++    ArrayList<String> redoStates() { return new ArrayList<>(redo); }
++    void restore(ArrayList<String> a, ArrayList<String> b) {
++        undo.clear(); redo.clear(); before = after = null; depth = 0;
++        if (a != null && a.size()%2 == 0) undo.addAll(a);
++        if (b != null && b.size()%2 == 0) redo.addAll(b);
++    }
++}
+--- before/app/src/main/java/com/foldstandby/clock/InputDialog.java
++++ after/app/src/main/java/com/foldstandby/clock/InputDialog.java
+@@ -5,6 +5,7 @@
+ import android.content.res.ColorStateList;
+ import android.graphics.Color;
+ import android.graphics.Insets;
++import android.graphics.Rect;
+ import android.graphics.Typeface;
+ import android.graphics.drawable.ColorDrawable;
+ import android.graphics.drawable.RippleDrawable;
+@@ -35,6 +36,8 @@
+     private final LinearLayout body, footer;
+     private final ScrollView scroll;
+     private final ArrayList<Field> fields = new ArrayList<>();
++    private int maxHeight=620;
++    private Rect lastArea;
+     private Runnable submit;
+     private int submitAction = EditorInfo.IME_ACTION_DONE;
+ 
+@@ -45,21 +48,22 @@
+ 
+         LinearLayout panel = new LinearLayout(activity) {
+             protected void onMeasure(int width, int height) {
+-                int limit = Math.min(UiKit.dp(activity, 620), MeasureSpec.getSize(height));
++                int limit = Math.min(UiKit.dp(activity, maxHeight), MeasureSpec.getSize(height));
+                 super.onMeasure(width, MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST));
+             }
+         };
+         panel.setOrientation(LinearLayout.VERTICAL);
+         panel.setPadding(dp(20), dp(18), dp(20), dp(18));
+         panel.setBackground(UiKit.surface(activity, UiKit.PANEL, 24, UiKit.SELECTOR_BORDER, 1));
+-        TextView heading = UiKit.text(activity, title, 19, UiKit.TEXT);
++        LinearLayout content=UiKit.column(activity);
++        TextView heading = UiKit.text(activity, title, 17, UiKit.TEXT);
+         heading.setTypeface(null, Typeface.BOLD);
+         heading.setAccessibilityHeading(true);
+-        panel.addView(heading);
++        content.addView(heading);
+         if (caption != null && !caption.isEmpty()) {
+             TextView description = UiKit.text(activity, caption, 11.5f, UiKit.MUTED);
+             description.setPadding(0, dp(4), 0, dp(2));
+-            panel.addView(description);
++            content.addView(description);
+         }
+ 
+         scroll = new ScrollView(activity);
+@@ -68,9 +72,10 @@
+         scroll.setSmoothScrollingEnabled(false);
+         body = UiKit.column(activity);
+         body.setPadding(0, dp(14), 0, dp(4));
+-        scroll.addView(body);
++        content.addView(body);
++        scroll.addView(content);
+         panel.addView(scroll, new LinearLayout.LayoutParams(-1, -2, 1));
+-        scroll.getViewTreeObserver().addOnGlobalLayoutListener(this::ensureInputVisible);
++        scroll.getViewTreeObserver().addOnGlobalLayoutListener(()->{resize();ensureInputVisible();});
+ 
+         footer = UiKit.row(activity);
+         footer.setPadding(0, dp(14), 0, 0);
+@@ -226,12 +231,17 @@
+         return button;
+     }
+ 
++    LinearLayout content() { return body; }
+     void resize() {
+-        WindowMetrics metrics = owner.getWindowManager().getCurrentWindowMetrics();
+-        Insets insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+-        int available = metrics.getBounds().width() - insets.left - insets.right - dp(32);
+-        getWindow().setLayout(Math.min(dp(480), Math.max(1, available)), WindowManager.LayoutParams.WRAP_CONTENT);
+-        scroll.post(this::ensureInputVisible);
++        WindowMetrics metrics=owner.getWindowManager().getCurrentWindowMetrics();
++        Insets bars=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
++        Rect area=owner instanceof MainActivity?((MainActivity)owner).dialogSafeBounds(getWindow().getDecorView().getRootWindowInsets()):new Rect(bars.left,bars.top,metrics.getBounds().width()-bars.right,metrics.getBounds().height()-bars.bottom);
++        if(area.equals(lastArea))return;lastArea=new Rect(area);
++        maxHeight=Math.max(60,Math.round((area.height()-dp(20))/owner.getResources().getDisplayMetrics().density));
++        int width=Math.min(dp(480),Math.max(1,area.width()-dp(20)));
++        WindowManager.LayoutParams attributes=getWindow().getAttributes();attributes.gravity=Gravity.TOP|Gravity.LEFT;
++        attributes.x=area.left-bars.left+(area.width()-width)/2;attributes.y=Math.max(0,area.top-bars.top+dp(10));
++        attributes.width=width;attributes.height=WindowManager.LayoutParams.WRAP_CONTENT;getWindow().setAttributes(attributes);scroll.requestLayout();scroll.post(this::ensureInputVisible);
+     }
+ 
+     public void show() {
+--- before/app/src/main/java/com/foldstandby/clock/MainActivity.java
++++ after/app/src/main/java/com/foldstandby/clock/MainActivity.java
+@@ -18,10 +18,10 @@
+ 
+ /**
+  * Unified Studio Workspace organized around a persistent 3D-perspective Smartwatch Page Carousel,
+- * a collapsible navigation drawer, an inline Workbench (Styles / Edit / Palette / Pages), and
+- * a sticky-preview Portrait layout with a dedicated full-screen Style Gallery.
++ * a collapsible navigation drawer, an object-focused Workbench (Content / Appearance / Palette), and
++ * adaptive previews, explicit component/style selectors, local history and persistent recovery.
+  */
+-public class MainActivity extends Activity {
++public class MainActivity extends Activity implements UiKit.EditTransactions {
+     private SharedPreferences prefs;
+     Scene draft;
+     private String baseline, pageId;
+@@ -41,6 +41,17 @@
+     private PaletteEditor colorEditor;
+     private final PaletteEditor.State colorState = new PaletteEditor.State();
+     private String colorContext = "";
++    private final EditHistory history = new EditHistory();
++    private String historyState;
++    private boolean browsingPages = true, previewExpanded, componentPicker, imeVisible, horizontalFold;
++    private int studioPanel, contentInsetLeft, contentInsetTop, safeLeft, safeTop, safeWidth, safeHeight;
++    private Rect localFold;
++    private int previewPaneWidth, editorPaneWidth;
++    private Dialog studioDialog;
++    private TextView undoButton, savedStatus, pageTitle;
++    private FrameLayout noticeHost;
++    private String noticeText;
++    private long noticeUntil;
+     private Rect foldBounds;
+     private FoldLayoutObserver folds;
+     private WeatherLocation.Request locationRequest;
+@@ -114,7 +125,12 @@
+ 
+     private void changed() {
+         for (Scene.Page p : draft.pages) p.refreshName();
++        String next = captureEditorState();
++        history.record(historyState, next);
++        historyState = next;
+         persistDraft();
++        if (undoButton != null) { undoButton.setEnabled(history.canUndo()); undoButton.setAlpha(history.canUndo() ? 1f : .35f); }
++        if (savedStatus != null) savedStatus.setText("已自动保存");
+         if (brandButton != null) {
+             brandButton.setText("折光 / " + draft.name + " ▾");
+         }
+@@ -136,18 +152,89 @@
+     }
+ 
+     private void saveNamedScene(String name) {
+-        draft.name = name;
+-        changed();
+-        prefs.edit().putString("scene_saved_" + name, draft.json()).apply();
+-        Toast.makeText(this, "命名场景已保存", Toast.LENGTH_SHORT).show();
++        if(prefs.contains("scene_saved_"+name)){
++            new StudioAlertBuilder().setTitle("已有同名快照").setMessage("快照包含页面、配色、待办内容与完成状态。请选择覆盖或另存副本。")
++                .setPositiveButton("覆盖快照",(d,n)->{saveRecoveryPoint("覆盖「"+name+"」前");completeSave(name);})
++                .setNeutralButton("保存副本",(d,n)->{String copy=name+" 副本";int i=2;while(prefs.contains("scene_saved_"+copy))copy=name+" 副本 "+i++;completeSave(copy);})
++                .setNegativeButton("取消",null).show();
++        }else completeSave(name);
++    }
++    private void completeSave(String name){
++        history.finish();draft.name=name;prefs.edit().putString("scene_saved_"+name,draft.json()).apply();changed();show();showNotice("已保存完整场景快照");
+     }
+ 
+     private void launchFullscreenPreview() {
+         startActivity(
+             new Intent(this, ClockActivity.class)
+                 .putExtra("scenePreview", draft.json())
++                .putExtra("previewPage", pageId)
++                .putExtra("previewNight", previewNight)
+                 .putExtra("uiCheck", testMode)
+         );
++    }
++
++    public void beginEdit() { history.begin(); }
++    public void endEdit() { history.end(); }
++    private String captureEditorState() {
++        JSONObject state = new JSONObject(), snapshots = new JSONObject();
++        Scene.put(state, "scene", draft.json()); Scene.put(state, "page", pageId); Scene.put(state, "slot", slot);
++        for (String key : new TreeSet<>(prefs.getAll().keySet())) if (key.startsWith("scene_saved_")) Scene.put(snapshots, key, prefs.getString(key, ""));
++        Scene.put(state, "snapshots", snapshots); return state.toString();
++    }
++    private void selectionBaseline() { history.finish(); historyState = captureEditorState(); }
++    private void restoreEditorState(String value) {
++        if (value == null) return;
++        try {
++            JSONObject state = new JSONObject(value);
++            Scene scene = Scene.parse(state.getString("scene")); if (scene == null) return;
++            draft = scene; pageId = state.optString("page", scene.home); pageId = page().id;
++            slot = Math.max(0, Math.min(state.optInt("slot"), page().count()-1));
++            JSONObject snapshots = state.optJSONObject("snapshots");
++            SharedPreferences.Editor edit = prefs.edit();
++            for (String key : prefs.getAll().keySet()) if (key.startsWith("scene_saved_")) edit.remove(key);
++            if (snapshots != null) for (Iterator<String> keys = snapshots.keys(); keys.hasNext();) { String key=keys.next(); if(key.startsWith("scene_saved_"))edit.putString(key,snapshots.optString(key)); }
++            edit.apply(); historyState = captureEditorState(); libraryType = component().type;
++            colorState.hex = null; colorContext = ""; portraitStyleScreen = componentPicker = false;
++            persistDraft(); show();
++        } catch (JSONException e) { message("恢复点不可用，当前配置已保留。"); }
++    }
++    private void undoEdit() { history.finish(); restoreEditorState(history.undo()); }
++    private void redoEdit() { history.finish(); restoreEditorState(history.redo()); }
++    private void saveRecoveryPoint(String label) {
++        history.finish();
++        JSONArray points;
++        try { points = new JSONArray(prefs.getString("studio_recovery", "[]")); } catch (JSONException e) { points = new JSONArray(); }
++        JSONArray next = new JSONArray(); JSONObject point = new JSONObject();
++        Scene.put(point,"label",label); Scene.put(point,"time",System.currentTimeMillis()); Scene.put(point,"state",captureEditorState()); next.put(point);
++        for(int i=0;i<Math.min(4,points.length());i++)next.put(points.optJSONObject(i));
++        prefs.edit().putString("studio_recovery",next.toString()).apply();
++    }
++    private void showRecoveryPoints() {
++        try {
++            JSONArray points = new JSONArray(prefs.getString("studio_recovery", "[]"));
++            if(points.length()==0){message("暂无恢复点。载入、恢复默认或覆盖快照前会自动保留。");return;}
++            String[] names=new String[points.length()];
++            for(int i=0;i<names.length;i++){JSONObject p=points.getJSONObject(i);names[i]=p.optString("label")+" · "+android.text.format.DateFormat.format("MM-dd HH:mm",p.optLong("time"));}
++            new StudioAlertBuilder().setTitle("恢复点 · 含待办内容与完成状态").setItems(names,(d,n)->{
++                String before=captureEditorState(); saveRecoveryPoint("恢复前的配置");
++                restoreEditorState(points.optJSONObject(n).optString("state"));
++                history.record(before,captureEditorState()); historyState=captureEditorState(); show();showNotice("已恢复配置");
++            }).setNegativeButton("关闭",null).show();
++        }catch(JSONException e){message("暂无可用的恢复点。");}
++    }
++    private void showNotice(String text) {
++        noticeText=text; noticeUntil=SystemClock.uptimeMillis()+5500; renderNotice();
++        handler.postDelayed(()->{if(SystemClock.uptimeMillis()>=noticeUntil&&noticeHost!=null){noticeHost.removeAllViews();noticeHost.setVisibility(View.GONE);}},5600);
++    }
++    private void renderNotice() {
++        if(noticeHost==null)return; noticeHost.removeAllViews();
++        boolean visible=noticeText!=null&&SystemClock.uptimeMillis()<noticeUntil;
++        noticeHost.setVisibility(visible?View.VISIBLE:View.GONE); if(!visible)return;
++        LinearLayout row=UiKit.row(this);row.setGravity(Gravity.CENTER_VERTICAL);
++        row.setPadding(dp(10),dp(4),dp(10),dp(4));row.setBackground(UiKit.surface(this,UiKit.ACTIVE_BG,10,UiKit.ACTIVE_BORDER,1));
++        TextView text=UiKit.text(this,noticeText,11,UiKit.TEXT);text.setMaxLines(2);row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
++        row.addView(UiKit.compactButton(this,"撤销",UiKit.ACTIVE_BG,0,UiKit.ACCENT,this::undoEdit));
++        noticeHost.addView(row,new FrameLayout.LayoutParams(-1,-2));noticeHost.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+     }
+ 
+     public void onCreate(Bundle state) {
+@@ -156,8 +243,15 @@
+         prefs = getSharedPreferences(testMode ? "ui_checks" : "clock", 0);
+         draft = Scene.load(prefs);
+         baseline = draft.json();
++        prefs.edit().putString(Scene.KEY,baseline).apply();
+         pageId = draft.home;
++        historyState = captureEditorState();
+         if (state != null) {
++            browsingPages = state.getBoolean("browsingPages", true);
++            previewExpanded = state.getBoolean("previewExpanded");
++            studioPanel = state.getInt("studioPanel");
++            componentPicker = state.getBoolean("componentPicker");
++            history.restore(state.getStringArrayList("undoStates"), state.getStringArrayList("redoStates"));
+             pageOverview = state.getBoolean("pageOverview");
+             navExpanded = state.getBoolean("navExpanded");
+             portraitStyleScreen = state.getBoolean("portraitStyleScreen");
+@@ -185,6 +279,7 @@
+                 }
+             } catch (Exception ignored) {}
+         }
++        historyState = captureEditorState();
+         getWindow().setStatusBarColor(UiKit.BG);
+         getWindow().setNavigationBarColor(UiKit.BG);
+         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+@@ -201,98 +296,136 @@
+     }
+ 
+     private void show() {
++        if(getWindow()==null)return;
+         rememberScroll();
+         WindowMetrics metrics = getWindowManager().getCurrentWindowMetrics();
+         Insets insets = metrics.getWindowInsets().getInsetsIgnoringVisibility(
+             WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
+         );
+         float density = getResources().getDisplayMetrics().density;
++        contentInsetLeft = insets.left; contentInsetTop = insets.top;
+         int w = Math.round((metrics.getBounds().width() - insets.left - insets.right) / density);
+         int h = Math.round((metrics.getBounds().height() - insets.top - insets.bottom) / density);
+         setContentView(createUi(w, h));
+-    }
+-
+-    private int leftPaneWidthDp() {
+-        if (!policy.parallel) return widthDp - 12;
+-        return Math.min(widthDp - 290, Math.min(620, Math.max(260, Math.round(widthDp * 0.48f))));
+-    }
+-
+-    private int paneInnerWidth(boolean isLeft) {
+-        if (!policy.parallel) return Math.max(220, widthDp - 38);
+-        int paneWidth = isLeft ? leftPaneWidthDp() : Math.max(260, widthDp - leftPaneWidthDp() - 22);
+-        return Math.max(200, paneWidth - 36);
+-    }
+-
++        getWindow().getDecorView().setOnApplyWindowInsetsListener((v, value) -> {
++            boolean visible = value.isVisible(WindowInsets.Type.ime());
++            if (imeVisible != visible) { imeVisible = visible; if (activeStage != null) activeStage.requestLayout(); }
++            return v.onApplyWindowInsets(value);
++        });
++    }
++
++    private int leftPaneWidthDp() { return horizontalFold ? widthDp - 12 : policy.parallel ? policy.left : widthDp - 12; }
++
++    private int paneInnerWidth(boolean left) { return Math.max(100,(left?previewPaneWidth:editorPaneWidth)-28); }
++
++    private WatchStageContainer activeStage;
++    private Rect foldDp(int w, int h) {
++        if(foldBounds==null)return null;
++        float density=getResources().getDisplayMetrics().density;
++        Rect r=new Rect(Math.round((foldBounds.left-contentInsetLeft)/density),Math.round((foldBounds.top-contentInsetTop)/density),
++            Math.round((foldBounds.right-contentInsetLeft)/density),Math.round((foldBounds.bottom-contentInsetTop)/density));
++        if(r.right<0||r.bottom<0||r.left>w||r.top>h)return null;
++        return r;
++    }
++    private Rect largestRegion(int w,int h,Rect fold) {
++        if(fold==null||fold.right<0||fold.bottom<0||fold.left>=w||fold.top>=h)return new Rect(0,0,w,h);
++        Rect a,b;
++        if(fold.width()>fold.height()){a=new Rect(0,0,w,Math.min(h,Math.max(0,fold.top)));b=new Rect(0,Math.min(h,fold.bottom),w,h);}
++        else{a=new Rect(0,0,Math.min(w,Math.max(0,fold.left)),h);b=new Rect(Math.min(w,fold.right),0,w,h);}
++        return a.width()*a.height()>=b.width()*b.height()?a:b;
++    }
+     View createUi(int w, int h) {
+-        windowWidthDp = w;
+-        navigationWidthDp = w > h && navExpanded ? Math.min(240, Math.max(160, Math.round(w * .24f))) : 0;
+-        widthDp = w - navigationWidthDp;
+-        heightDp = h;
++        int originalW=w,originalH=h;
+         UiKit.customFontScale = prefs != null ? prefs.getFloat("uiFontScale", 1.0f) : 1.0f;
+-        policy = new AdaptiveLayout(widthDp, h, getResources().getConfiguration().fontScale * UiKit.customFontScale);
+-        previews.clear();
+-        carouselPreviews.clear();
+-        scrollViews.clear();
+-        colorEditor = null;
+-        brandButton = null;
+-        carouselScroll = null;
+-        workbenchHost = null;
+-
+-        LinearLayout root = UiKit.column(this);
+-        root.setBackgroundColor(UiKit.BG);
+-
+-        if (tab == 3) {
+-            renderSettingsShell(root);
+-            return withNavigation(root);
+-        }
+-
+-        if (tab != 3 && !policy.parallel && portraitStyleScreen) {
+-            renderPortraitStyleScreen(root);
+-            return withNavigation(root);
+-        }
+-
+-        LinearLayout shell = UiKit.row(this);
+-        root.addView(shell, new LinearLayout.LayoutParams(-1, 0, 1));
+-
+-        LinearLayout mainCol = UiKit.column(this);
+-        shell.addView(mainCol, new LinearLayout.LayoutParams(0, -1, 1));
+-
+-        workspace = UiKit.row(this);
+-        workspace.setPadding(dp(6), dp(5), dp(6), dp(6));
+-        mainCol.addView(workspace, new LinearLayout.LayoutParams(-1, 0, 1));
+-
+-        if (policy.parallel) {
+-            first = UiKit.column(this);
+-            first.setBackground(UiKit.surface(this, UiKit.PANEL, 14, UiKit.PANEL_BORDER, 1f));
+-            workspace.addView(first, new LinearLayout.LayoutParams(dp(leftPaneWidthDp()), -1));
+-
+-            second = UiKit.column(this);
+-            second.setBackground(UiKit.surface(this, UiKit.PANEL, 14, UiKit.PANEL_BORDER, 1f));
+-            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(0, -1, 1);
+-            sp.leftMargin = dp(8);
+-            workspace.addView(second, sp);
+-            applyFoldPanes();
+-
+-            buildWatchCarouselStage(first, true);
+-            workbenchHost = second;
+-            buildIntegratedWorkbench(workbenchHost, true);
+-        } else {
+-            first = UiKit.column(this);
+-            first.setBackground(UiKit.surface(this, UiKit.PANEL, 14, UiKit.PANEL_BORDER, 1f));
+-            workspace.addView(first, new LinearLayout.LayoutParams(-1, -1));
+-            second = first;
+-
+-            WatchStageContainer stage = new WatchStageContainer(this, Math.max(180, Math.round(heightDp * 0.48f)));
+-            stage.setBackground(UiKit.surface(this, 0xff0d121a, 12, UiKit.CARD_BORDER, 1f));
+-            LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(-1, -2);
+-            stLp.bottomMargin = dp(6);
+-            first.addView(stage, stLp);
+-            buildWatchCarouselStage(stage, false);
+-            workbenchHost = UiKit.column(this);
+-            first.addView(workbenchHost, new LinearLayout.LayoutParams(-1, 0, 1));
+-            buildIntegratedWorkbench(workbenchHost, false);
+-        }
+-        return withNavigation(root);
++        float scale=getResources().getConfiguration().fontScale*UiKit.customFontScale;
++        Rect fold=foldDp(w,h),region=new Rect(0,0,w,h);
++        int nav=w>h&&navExpanded?Math.min(220,Math.max(160,Math.round(w*.22f))):0;
++        boolean canSplit=fold!=null&&(fold.width()>fold.height()?fold.top>=120&&h-fold.bottom>=220:
++            fold.left-nav>=220&&w-fold.right>=Math.round(250*Math.max(1f,scale*.8f)));
++        if(fold!=null&&(!canSplit||tab==3||portraitStyleScreen))region=largestRegion(w,h,fold);
++        safeLeft=region.left;safeTop=region.top;safeWidth=w=region.width();safeHeight=h=region.height();
++        windowWidthDp=w;
++        navigationWidthDp=w>h&&navExpanded?Math.min(220,Math.max(150,Math.round(w*.22f))):0;
++        widthDp=w-navigationWidthDp;heightDp=h;
++        localFold=fold==null?null:new Rect(fold.left-safeLeft-navigationWidthDp-6,fold.top-safeTop-5,
++            fold.right-safeLeft-navigationWidthDp-6,fold.bottom-safeTop-5);
++        horizontalFold=canSplit&&region.left==0&&region.top==0&&fold.width()>fold.height()&&tab!=3&&!portraitStyleScreen;
++        policy=new AdaptiveLayout(widthDp,h,scale);
++        boolean split=canSplit&&region.left==0&&region.top==0&&tab!=3&&!portraitStyleScreen;
++        previewPaneWidth=editorPaneWidth=widthDp-12;
++        if(split&&!horizontalFold){previewPaneWidth=localFold.left;editorPaneWidth=widthDp-12-localFold.right;}
++        else if(policy.parallel&&!horizontalFold){previewPaneWidth=policy.left;editorPaneWidth=widthDp-policy.left-20;}
++        previews.clear();carouselPreviews.clear();scrollViews.clear();colorEditor=null;brandButton=null;carouselScroll=null;workbenchHost=null;activeStage=null;
++        LinearLayout root=UiKit.column(this);root.setBackgroundColor(UiKit.BG);
++        if(tab==3)renderSettingsShell(root);
++        else if(portraitStyleScreen)renderPortraitStyleScreen(root);
++        else{
++            workspace=new FoldWorkspace(this);workspace.setOrientation(LinearLayout.HORIZONTAL);workspace.setPadding(dp(6),dp(5),dp(6),dp(6));
++            root.addView(workspace,new LinearLayout.LayoutParams(-1,0,1));
++            first=UiKit.column(this);first.setBackground(UiKit.surface(this,UiKit.PANEL,14,UiKit.PANEL_BORDER,1));
++            if(policy.parallel||split){
++                workspace.addView(first,new LinearLayout.LayoutParams(dp(leftPaneWidthDp()),-1));
++                second=new EditorPane(this);second.setBackground(UiKit.surface(this,UiKit.PANEL,14,UiKit.PANEL_BORDER,1));
++                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=dp(8);workspace.addView(second,lp);
++                if(split)applyFoldPanes();
++                buildWatchCarouselStage(first,true);workbenchHost=second;buildIntegratedWorkbench(second,true);
++            }else{
++                workspace.addView(first,new LinearLayout.LayoutParams(-1,-1));second=first;
++                activeStage=new WatchStageContainer(this,0);activeStage.setBackground(UiKit.surface(this,0xff0d121a,12,UiKit.CARD_BORDER,1));
++                first.addView(activeStage,new LinearLayout.LayoutParams(-1,-2));buildWatchCarouselStage(activeStage,false);
++                workbenchHost=new EditorPane(this);first.addView(workbenchHost,new LinearLayout.LayoutParams(-1,0,1));buildIntegratedWorkbench(workbenchHost,false);
++            }
++        }
++        FrameLayout content=new FrameLayout(this);content.addView(withNavigation(root),new FrameLayout.LayoutParams(-1,-1));
++        noticeHost=new FrameLayout(this);FrameLayout.LayoutParams toastLp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);toastLp.setMargins(dp(12),0,dp(12),dp(10));content.addView(noticeHost,toastLp);renderNotice();
++        if(region.left==0&&region.top==0&&region.width()==originalW&&region.height()==originalH)return content;
++        FrameLayout safe=new SafeRegionContainer(this,fold);safe.setBackgroundColor(UiKit.BG);safe.addView(content,new FrameLayout.LayoutParams(dp(w),dp(h)));safe.setTag("fold:safe");return safe;
++    }
++
++    final class EditorPane extends LinearLayout {
++        LinearLayout fixedHeader,extras,body;boolean compact;
++        EditorPane(Context c){super(c);setOrientation(LinearLayout.VERTICAL);}
++        protected void onMeasure(int w,int h){
++            boolean small=MeasureSpec.getSize(h)<dp(260*Math.max(1f,Math.min(1.5f,getResources().getConfiguration().fontScale*UiKit.customFontScale)));
++            if(extras!=null&&body!=null&&small!=compact){
++                ((ViewGroup)extras.getParent()).removeView(extras);compact=small;
++                if(small)body.addView(extras,0);else fixedHeader.addView(extras);
++            }
++            super.onMeasure(w,h);
++        }
++    }
++
++    final class SafeRegionContainer extends FrameLayout {
++        private final Rect fold;
++        SafeRegionContainer(Context c,Rect bounds){super(c);fold=bounds==null?null:new Rect(dp(bounds.left),dp(bounds.top),dp(bounds.right),dp(bounds.bottom));}
++        protected void onMeasure(int w,int h){
++            Rect region=largestRegion(MeasureSpec.getSize(w),MeasureSpec.getSize(h),fold);
++            if(getChildCount()>0){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)getChildAt(0).getLayoutParams();lp.width=region.width();lp.height=region.height();lp.leftMargin=region.left;lp.topMargin=region.top;}
++            super.onMeasure(w,h);
++        }
++    }
++    final class FoldWorkspace extends LinearLayout {
++        FoldWorkspace(Context c){super(c);}
++        protected void onMeasure(int w,int h){
++            if(horizontalFold&&localFold!=null&&first!=null&&second!=null){
++                int available=MeasureSpec.getSize(h),top=dp(localFold.top),bottom=dp(localFold.bottom);
++                if(available-bottom>=dp(200)){
++                    setPadding(dp(6),dp(5),dp(6),dp(6));first.setVisibility(View.VISIBLE);first.getLayoutParams().height=top;
++                    View tools=first.findViewWithTag("preview:tools");if(tools!=null)tools.setVisibility(View.VISIBLE);
++                    if(carouselScroll!=null&&carouselScroll.getChildCount()>0){ViewGroup track=(ViewGroup)carouselScroll.getChildAt(0);for(int i=0;i<track.getChildCount();i++)((ViewGroup)track.getChildAt(i)).getChildAt(0).setVisibility(browsingPages?View.VISIBLE:View.GONE);}
++                    LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)second.getLayoutParams();lp.topMargin=dp(Math.max(1,localFold.height()));
++                }else{
++                    Rect area=largestRegion(MeasureSpec.getSize(w),available,new Rect(0,top+dp(5),MeasureSpec.getSize(w),bottom+dp(5)));
++                    setPadding(dp(6),Math.max(dp(5),area.top),dp(6),Math.max(dp(6),available-area.bottom));
++                    int preview=Math.min(dp(110),Math.max(0,area.height()-dp(200)));
++                    first.setVisibility(preview>=dp(76)?View.VISIBLE:View.GONE);first.getLayoutParams().height=preview;
++                    ((LinearLayout.LayoutParams)second.getLayoutParams()).topMargin=0;
++                    View tools=first.findViewWithTag("preview:tools");if(tools!=null)tools.setVisibility(View.GONE);
++                    if(carouselScroll!=null&&carouselScroll.getChildCount()>0){ViewGroup track=(ViewGroup)carouselScroll.getChildAt(0);for(int i=0;i<track.getChildCount();i++)((ViewGroup)track.getChildAt(i)).getChildAt(0).setVisibility(View.GONE);}
++                }
++            }
++            super.onMeasure(w,h);
++        }
+     }
+ 
+     /** Landscape reserves drawer space; portrait keeps the modal overlay. */
+@@ -339,37 +472,41 @@
+     }
+ 
+     private void selectPageInPlace(int pageIdx, int nextSlot, boolean switchFromPageTab, boolean smoothScroll) {
++        history.finish();
+         if (pageIdx < 0 || pageIdx >= draft.pages.size()) return;
+         pageId = draft.pages.get(pageIdx).id;
+         slot = Math.max(0, Math.min(nextSlot, page().count() - 1));
+         libraryType = component().type;
++        if (switchFromPageTab && browsingPages) { browsingPages=false;tab=1;selectionBaseline();show();return; }
+         if (switchFromPageTab && tab == 2) tab = 1;
++        selectionBaseline();
++        if(pageTitle!=null)pageTitle.setText((draft.index(pageId)+1)+"/"+draft.pages.size()+" · "+page().name+" ▾");
++        for(ClockFace f:carouselPreviews){f.editorSlot=f.pageIdForEditor().equals(pageId)?slot:-1;f.invalidate();}
+         refreshWorkbenchInPlace();
+         if (carouselScroll != null) {
+-            carouselScroll.setSelectedIndex(pageIdx, smoothScroll);
++            carouselScroll.setSelectedIndex(browsingPages?pageIdx:0, smoothScroll);
+         }
+     }
+ 
+     private void applyFoldPanes() {
+-        if (foldBounds == null || !policy.parallel) return;
+-        float density = getResources().getDisplayMetrics().density;
+-        if (foldBounds.width() > foldBounds.height()) {
+-            int top = Math.round(foldBounds.centerY() / density) - 24;
+-            if (top < 140 || heightDp - top < 170) return;
++        if(localFold==null)return;
++        if(horizontalFold){
+             workspace.setOrientation(LinearLayout.VERTICAL);
+-            first.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(top - 6)));
+-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, 1);
+-            lp.topMargin = dp(Math.max(8, foldBounds.height() / density));
+-            second.setLayoutParams(lp);
+-        } else {
+-            int left = Math.round(foldBounds.centerX() / density) - navigationWidthDp - 10;
+-            if (left >= 240 && widthDp - left >= 260) {
+-                first.setLayoutParams(new LinearLayout.LayoutParams(dp(left), -1));
+-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1);
+-                lp.leftMargin = dp(Math.max(8, foldBounds.width() / density));
+-                second.setLayoutParams(lp);
+-            }
+-        }
++            first.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(Math.max(0,localFold.top))));
++            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,0,1);lp.topMargin=dp(Math.max(1,localFold.height()));second.setLayoutParams(lp);
++        }else{
++            first.setLayoutParams(new LinearLayout.LayoutParams(dp(Math.max(0,localFold.left)),-1));
++            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=dp(Math.max(1,localFold.width()));second.setLayoutParams(lp);
++        }
++    }
++    Rect dialogSafeBounds() { return dialogSafeBounds(null); }
++    Rect dialogSafeBounds(WindowInsets override) {
++        WindowMetrics metrics=getWindowManager().getCurrentWindowMetrics();
++        WindowInsets value=override!=null?override:getWindow().getDecorView().getRootWindowInsets();if(value==null)value=metrics.getWindowInsets();
++        Insets bars=value.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());
++        Rect area=new Rect(bars.left,bars.top,metrics.getBounds().width()-bars.right,metrics.getBounds().height()-bars.bottom);
++        if(foldBounds!=null){Rect f=new Rect(foldBounds);f.offset(-area.left,-area.top);Rect safe=largestRegion(area.width(),area.height(),f);safe.offset(area.left,area.top);return safe;}
++        return area;
+     }
+ 
+     /** Collapsible navigation drawer replacing permanent top and side navigation chrome. */
+@@ -437,39 +574,19 @@
+             lp.bottomMargin = dp(2);
+             host.addView(sub, lp);
+         }
+-        UiKit.divider(this, host);
+-        UiKit.action(this, host, "全屏待机预览", () -> {
+-            navExpanded = false;
+-            launchFullscreenPreview();
+-        });
+-        UiKit.action(this, host, previewNight ? "切换日间预览" : "切换夜间预览", () -> {
+-            previewNight = !previewNight;
+-            show();
+-        });
+     }
+ 
+     /** Smartwatch-style 3D perspective page carousel acting as the sole real-time preview stage. */
+     private void buildWatchCarouselStage(LinearLayout host, boolean fullHeight) {
+-        // 1. Pinned Top Header (stays stationary while pages scroll)
+-        UiKit.WrapRow header = new UiKit.WrapRow(this, 5, 4);
+-        header.setPadding(dp(8), dp(6), dp(8), dp(4));
+-        header.addView(UiKit.compactButton(
+-            this,
+-            navExpanded ? "✕" : "☰",
+-            navExpanded ? UiKit.ACTIVE_BG : UiKit.ROW,
+-            navExpanded ? UiKit.ACTIVE_BORDER : UiKit.ROW_BORDER,
+-            navExpanded ? UiKit.ACCENT : UiKit.TEXT,
+-            () -> { navExpanded = !navExpanded; show(); }
+-        ));
+-
+-        TextView title = UiKit.text(this, "场景页面", 13, UiKit.TEXT);
+-        title.setTypeface(null, Typeface.BOLD);
+-        title.setMinHeight(dp(31));
+-        title.setPadding(dp(2), 0, dp(4), 0);
+-        header.addView(title);
+-
+-        host.addView(header, new LinearLayout.LayoutParams(-1, -2));
+-
++        LinearLayout header=UiKit.row(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(6),dp(4),dp(6),0);
++        header.addView(icon(navExpanded?"✕":"☰","导航菜单",()->{navExpanded=!navExpanded;show();}));
++        TextView title=pageTitle=UiKit.text(this,(draft.index(pageId)+1)+"/"+draft.pages.size()+" · "+page().name+" ▾",12,UiKit.TEXT);
++        title.setTypeface(null,Typeface.BOLD);title.setMaxLines(1);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setMinHeight(dp(40));
++        title.setGravity(Gravity.CENTER_VERTICAL);title.setPadding(dp(6),0,dp(4),0);title.setContentDescription("浏览页面 · "+page().name);
++        title.setOnClickListener(v->{browsingPages=!browsingPages;portraitStyleScreen=false;show();});header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
++        header.addView(UiKit.compactButton(this,"布局",UiKit.PANEL,0,UiKit.TEXT,()->showLayoutPicker(false)));
++        undoButton=icon("↶","撤销上一步",this::undoEdit);undoButton.setEnabled(history.canUndo());undoButton.setAlpha(history.canUndo()?1f:.35f);header.addView(undoButton);
++        header.addView(icon("⋯","页面更多操作",this::showPageMenu));host.addView(header,new LinearLayout.LayoutParams(-1,-2));
+         // 2. Scrollable Middle Carousel (enlarged selected page + shrunk 3D perspective neighbors, no outer boxes)
+         carouselScroll = new WatchCarouselScrollView(this);
+         carouselScroll.setVerticalScrollBarEnabled(false);
+@@ -481,7 +598,7 @@
+         track.setPadding(dp(8), dp(2), dp(8), dp(2));
+ 
+         int availW = paneInnerWidth(true);
+-        int selectedIndex = draft.index(pageId);
++        int selectedIndex = browsingPages ? draft.index(pageId) : 0;
+         // Initial dimensions are refined from the actual viewport in carousel.onMeasure.
+         int selectedH = Math.round(availW * 1248f / 1972f);
+ 
+@@ -489,6 +606,7 @@
+         for (int i = 0; i < draft.pages.size(); i++) {
+             final int pageIdx = i;
+             final Scene.Page p = draft.pages.get(i);
++            if(!browsingPages&&!p.id.equals(pageId))continue;
+             boolean selected = p.id.equals(pageId);
+ 
+             LinearLayout item = UiKit.column(this);
+@@ -506,13 +624,15 @@
+                 selected ? UiKit.ACCENT : UiKit.MUTED
+             );
+             label.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
++            label.setMaxLines(1);label.setEllipsize(android.text.TextUtils.TruncateAt.END);label.setGravity(Gravity.CENTER);
+             label.setPadding(dp(4), dp(1), dp(4), dp(2));
+-            labelRow.addView(label);
++            labelRow.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+             if (p.id.equals(draft.home)) {
+                 TextView homeTag = UiKit.badge(this, "主页", UiKit.ACTIVE_BG, UiKit.ACTIVE_BORDER, UiKit.ACCENT);
+                 labelRow.addView(homeTag);
+             }
+-            item.addView(labelRow, new LinearLayout.LayoutParams(-2, -2));
++            if(!browsingPages)labelRow.setVisibility(View.GONE);
++            item.addView(labelRow, new LinearLayout.LayoutParams(-1, -2));
+ 
+             // Pure black cover-ratio preview with unified layout size so scaleX/Y animates smoothly
+             int previewH = selectedH;
+@@ -532,6 +652,7 @@
+             face.managedRefresh = true;
+             face.bind(draft, i);
+             face.nightPreview = previewNight;
++            face.editorSlot=selected?slot:-1;
+             face.setContentDescription("实时预览 · " + p.name);
+             frame.addView(face);
+             carouselPreviews.add(face);
+@@ -565,6 +686,7 @@
+ 
+             View.OnLongClickListener drag = v -> {
+                 pageOverview = true;
++                if(!browsingPages){browsingPages=true;show();return true;}
+                 if (v.isAttachedToWindow()) {
+                     return v.startDragAndDrop(
+                         ClipData.newPlainText("page", p.id),
+@@ -586,7 +708,7 @@
+         }
+ 
+         carouselScroll.bind(itemViews, selectedIndex, pageIdx -> {
+-            if (pageIdx >= 0 && pageIdx < draft.pages.size()) {
++            if (browsingPages && pageIdx >= 0 && pageIdx < draft.pages.size()) {
+                 String nextId = draft.pages.get(pageIdx).id;
+                 if (!nextId.equals(pageId)) {
+                     selectPageInPlace(pageIdx, 0, false, false);
+@@ -608,285 +730,122 @@
+             }
+         });
+ 
+-        // 3. Pinned Bottom Footer (stays stationary while pages scroll)
+-        UiKit.WrapRow footer = new UiKit.WrapRow(this, 6, 4);
+-        footer.setPadding(dp(8), dp(4), dp(8), dp(6));
+-        footer.addView(UiKit.compactButton(
+-            this,
+-            "＋ 添加页面",
+-            UiKit.ROW,
+-            UiKit.ROW_BORDER,
+-            UiKit.ACCENT,
+-            () -> {
+-                Scene.Page p = new Scene.Page();
+-                p.refreshName();
+-                draft.pages.add(p);
+-                pageId = p.id;
+-                slot = 0;
+-                if (tab == 2) tab = 1;
+-                changed();
+-                show();
+-            }
+-        ));
+-        host.addView(footer, new LinearLayout.LayoutParams(-1, -2));
++        LinearLayout footer=UiKit.row(this);footer.setGravity(Gravity.CENTER_VERTICAL);footer.setTag("preview:tools");footer.setPadding(dp(6),dp(3),dp(6),dp(4));
++        footer.addView(UiKit.compactButton(this,"＋ 页面",UiKit.ROW,UiKit.ROW_BORDER,UiKit.ACCENT,()->showLayoutPicker(true)));
++        View spacer=new View(this);footer.addView(spacer,new LinearLayout.LayoutParams(0,1,1));
++        footer.addView(icon(previewNight?"☾":"☀\uFE0E",previewNight?"切换日间预览":"切换夜间预览",()->{history.finish();previewNight=!previewNight;colorState.hex=null;colorContext="";show();}));
++        footer.addView(icon("⛶","全屏预览当前页",this::launchFullscreenPreview));
++        footer.addView(icon(previewExpanded?"⌃":"⌄",previewExpanded?"收起预览":"展开预览",()->{previewExpanded=!previewExpanded;show();}));
++        host.addView(footer,new LinearLayout.LayoutParams(-1,-2));
++    }
++    private TextView icon(String text,String description,Runnable action){
++        TextView view=UiKit.compactButton(this,text,UiKit.PANEL,0,UiKit.TEXT,action);view.setContentDescription(description);view.setTooltipText(description);
++        view.setMinWidth(dp(40));view.setMinHeight(dp(40));view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP,UiKit.sp(16));return view;
++    }
++    private String regionName(int index){
++        if(page().layout==0)return "整页";
++        if(page().layout==3)return new String[]{"左上","右上","左下","右下"}[index];
++        return index==0?"左侧":"右侧";
++    }
++    private void showPageMenu(){
++        ArrayList<String> labels=new ArrayList<>();ArrayList<Runnable> actions=new ArrayList<>();
++        labels.add("浏览与排序页面");actions.add(()->{browsingPages=true;show();});
++        labels.add(page().id.equals(draft.home)?"✓ 当前主页":"设为主页");actions.add(()->{draft.home=pageId;changed();show();});
++        labels.add("重命名页面");actions.add(()->input("页面名称",page().name,value->{page().name=value;page().autoName=false;changed();show();}));
++        labels.add("名称跟随组件 · "+(page().autoName?"开":"关"));actions.add(()->{page().autoName=!page().autoName;changed();show();});
++        labels.add("复制此页");actions.add(()->{Scene.Page copy=page().duplicate();draft.pages.add(draft.index(pageId)+1,copy);pageId=copy.id;changed();show();showNotice("已复制页面");});
++        labels.add("移动到…");actions.add(()->{String[] positions=new String[draft.pages.size()];for(int i=0;i<positions.length;i++)positions[i]="第 "+(i+1)+" 页";new StudioAlertBuilder().setTitle("移动页面").setItems(positions,(d,n)->{draft.movePage(pageId,n);changed();show();}).show();});
++        labels.add("添加页面");actions.add(()->showLayoutPicker(true));
++        labels.add("全屏预览当前页");actions.add(this::launchFullscreenPreview);
++        labels.add(previewNight?"切换日间预览":"切换夜间预览");actions.add(()->{previewNight=!previewNight;colorState.hex=null;show();});
++        labels.add("重做"+(history.canRedo()?"":" · 暂无"));actions.add(this::redoEdit);
++        labels.add("删除此页");actions.add(()->{if(draft.pages.size()==1){showNotice("至少保留一个页面");return;}int index=draft.index(pageId);Scene.Page old=page();draft.remove(old);pageId=draft.pages.get(Math.min(index,draft.pages.size()-1)).id;slot=0;changed();show();showNotice("已删除「"+old.name+"」");});
++        new StudioAlertBuilder().setTitle(page().name).setItems(labels.toArray(new String[0]),(d,n)->actions.get(n).run()).setNegativeButton("关闭",null).show();
++    }
++    private void showLayoutPicker(boolean adding){
++        InputDialog dialog=new InputDialog(this,adding?"添加页面":"页面布局",adding?"选择布局与默认搭配，随后点击区域修改内容":"切换布局会保留暂时隐藏的区域内容");
++        LinearLayout content=dialog.content();
++        for(int i=0;i<4;i++){
++            final int layout=i;Scene sample=draft.copy();Scene.Page target=adding?new Scene.Page():sample.pages.get(sample.index(pageId));target.layout=i;
++            if(adding){String[][] defaults={{"clock"},{"clock","weather"},{"clock","date"},{"clock","weather","date","battery"}};for(int n=0;n<defaults[i].length;n++)target.slots[n].setType(defaults[i][n]);target.refreshName();sample.pages.add(target);}
++            LinearLayout card=UiKit.card(this,content,Dashboard.LAYOUTS[i]+" · "+target.contentName(),null);
++            AspectPreview frame=new AspectPreview(this);ClockFace face=new ClockFace(this,prefs);face.managedRefresh=true;face.demo=true;face.bind(sample,sample.index(target.id));face.nightPreview=previewNight;frame.addView(face);card.addView(frame,new LinearLayout.LayoutParams(-1,dp(110)));
++            Runnable choose=()->{history.finish();if(adding){Scene.Page page=Scene.Page.from(target.json());draft.pages.add(page);pageId=page.id;slot=0;}else{page().layout=layout;slot=Math.min(slot,page().count()-1);}browsingPages=false;tab=1;changed();dialog.dismiss();show();if(adding)showNotice("页面已添加 · 点击区域编辑");};
++            face.setOnClickListener(v->choose.run());card.setOnClickListener(v->choose.run());UiKit.action(this,card,"使用"+Dashboard.LAYOUTS[i],choose);
++        }
++        openInputDialog(dialog);
+     }
+ 
+     /** Integrated right-pane (landscape) or lower-pane (portrait) Workbench unifying Styles, Edit, Palette, and Pages. */
+     private void buildIntegratedWorkbench(LinearLayout host, boolean parallel) {
+-        if (libraryType == null) libraryType = component().type;
+-        int innerWidth = paneInnerWidth(!parallel);
+-        boolean clock = component().type.equals("clock");
+-        int activeTab = (tab == 0) ? 0 : (tab == 2 ? 3 : ((clock && inspectorGroup == 2) || (!clock && inspectorGroup == 1) ? 2 : 1));
+-
+-        LinearLayout header = UiKit.column(this);
+-        header.setPadding(dp(10), dp(7), dp(10), dp(2));
+-
+-        if (parallel) {
+-            UiKit.WrapRow topActions = new UiKit.WrapRow(this, 5, 4);
+-            TextView ctx = UiKit.text(
+-                this,
+-                page().name + " / 槽位 " + (slot + 1) + " · " + Scene.typeName(component().type),
+-                12,
+-                UiKit.TEXT
+-            );
+-            ctx.setTypeface(null, Typeface.BOLD);
+-            ctx.setMinHeight(dp(31));
+-            ctx.setPadding(dp(2), 0, dp(6), 0);
+-            topActions.addView(ctx);
+-            header.addView(topActions, new LinearLayout.LayoutParams(-1, -2));
+-            UiKit.gap(this, header, 5);
+-        }
+-
+-        // Compact Slot + Layout selector strip (always accessible in-place)
+-        if (activeTab == 0 || activeTab == 1) {
+-            UiKit.WrapRow slotStrip = new UiKit.WrapRow(this, 4, 4);
+-            for (int i = 0; i < page().count(); i++) {
+-                final int n = i;
+-                boolean cur = n == slot;
+-                slotStrip.addView(UiKit.compactButton(
+-                    this,
+-                    (n + 1) + "·" + Scene.typeName(page().slots[n].type),
+-                    cur ? UiKit.ACTIVE_BG : UiKit.ROW,
+-                    cur ? UiKit.ACTIVE_BORDER : UiKit.ROW_BORDER,
+-                    cur ? UiKit.ACCENT : UiKit.TEXT,
+-                    () -> { slot = n; libraryType = component().type; show(); }
+-                ));
+-            }
+-            for (int l = 0; l < Dashboard.LAYOUTS.length; l++) {
+-                final int ln = l;
+-                boolean cur = page().layout == ln;
+-                slotStrip.addView(UiKit.compactButton(
+-                    this,
+-                    Dashboard.LAYOUTS[ln],
+-                    cur ? UiKit.SELECTOR_BG : UiKit.BG,
+-                    cur ? UiKit.SELECTOR_BORDER : UiKit.ROW_BORDER,
+-                    cur ? UiKit.TEXT : UiKit.MUTED,
+-                    () -> {
+-                        page().layout = ln;
+-                        slot = Math.min(slot, page().count() - 1);
+-                        changed();
+-                        show();
+-                    }
+-                ));
+-            }
+-            header.addView(slotStrip, new LinearLayout.LayoutParams(-1, -2));
+-            UiKit.gap(this, header, 4);
+-        }
+-
+-        // Integrated Sub-Tabs: 样式 | 编辑 | 配色 | 页面
+-        String[] labels = { "样式", "编辑", "配色", "页面" };
+-        LinearLayout tabRow = UiKit.row(this);
+-        for (int i = 0; i < labels.length; i++) {
+-            final int idx = i;
+-            boolean selected = idx == activeTab;
+-            LinearLayout item = UiKit.column(this);
+-            TextView tv = UiKit.text(this, labels[idx], 12, selected ? UiKit.ACCENT : UiKit.MUTED);
+-            tv.setMinHeight(dp(34));
+-            tv.setMaxLines(1);
+-            tv.setGravity(Gravity.CENTER);
+-            tv.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+-            tv.setPadding(dp(2), dp(3), dp(2), dp(3));
+-            item.addView(tv, new LinearLayout.LayoutParams(-1, -2));
+-
+-            View bar = new View(this);
+-            bar.setBackgroundColor(selected ? UiKit.ACCENT : UiKit.DIVIDER);
+-            item.addView(bar, new LinearLayout.LayoutParams(-1, dp(selected ? 2.5f : 1f)));
+-
+-            Runnable choose = () -> {
+-                rememberScroll();
+-                if (idx == 0) {
+-                    tab = 0;
+-                    if (!policy.parallel) portraitStyleScreen = true;
+-                } else if (idx == 1) {
+-                    tab = 1;
+-                    portraitStyleScreen = false;
+-                    if ((clock && inspectorGroup == 2) || (!clock && inspectorGroup == 1)) inspectorGroup = 0;
+-                } else if (idx == 2) {
+-                    tab = 1;
+-                    portraitStyleScreen = false;
+-                    inspectorGroup = clock ? 2 : 1;
+-                } else {
+-                    tab = 2;
+-                    portraitStyleScreen = false;
+-                }
+-                show();
+-            };
+-            item.setOnClickListener(v -> choose.run());
+-            tv.setOnClickListener(v -> choose.run());
+-            item.setContentDescription("工作台 · " + labels[idx] + (selected ? " · 已选择" : ""));
+-            tabRow.addView(item, new LinearLayout.LayoutParams(0, -2, 1));
+-        }
+-        header.addView(tabRow, new LinearLayout.LayoutParams(-1, -2));
+-        host.addView(header, new LinearLayout.LayoutParams(-1, -2));
+-
+-        // Scrollable Body inside Workbench (independent from Carousel scroll)
+-        String scrollKey = "wb:" + activeTab + ":" + pageId + ":" + slot + ":" + inspectorGroup + ":" + libraryType;
+-        LinearLayout body = scrollColumn(host, scrollKey);
+-
+-        if (activeTab == 0) {
+-            if (!parallel) {
+-                UiKit.action(this, body, "全屏展开样式图库  →", () -> {
+-                    portraitStyleScreen = true;
+-                    show();
+-                });
+-            }
+-            renderStyleGalleryBody(body, innerWidth);
+-        } else if (activeTab == 1) {
+-            if (clock) {
+-                int curG = (inspectorGroup == 1 || inspectorGroup == 3) ? inspectorGroup : 0;
+-                UiKit.chips(
+-                    this,
+-                    body,
+-                    innerWidth,
+-                    new String[] { "表盘与字体", "细节参数", "内容与显示" },
+-                    curG == 0 ? 0 : curG == 1 ? 1 : 2,
+-                    n -> {
+-                        inspectorGroup = n == 0 ? 0 : n == 1 ? 1 : 3;
+-                        show();
+-                    }
+-                );
+-                UiKit.gap(this, body, 4);
+-                ComponentInspector.render(this, prefs, body, component(), curG, paletteScope, innerWidth, inspectorHost());
+-            } else {
+-                ComponentInspector.render(this, prefs, body, component(), 0, paletteScope, innerWidth, inspectorHost());
+-            }
+-        } else if (activeTab == 2) {
+-            ComponentInspector.render(this, prefs, body, component(), clock ? 2 : 1, paletteScope, innerWidth, inspectorHost());
+-        } else {
+-            pageTools(body, innerWidth);
+-            pageOptions(body, innerWidth);
+-        }
+-    }
++        int innerWidth=paneInnerWidth(false);
++        LinearLayout header=UiKit.column(this);header.setPadding(dp(10),dp(6),dp(10),0);
++        LinearLayout extras=UiKit.column(this);
++        LinearLayout context=UiKit.row(this);context.setGravity(Gravity.CENTER_VERTICAL);
++        TextView title=UiKit.text(this,regionName(slot)+" · "+Scene.typeName(component().type),12,UiKit.ACCENT);title.setMaxLines(1);title.setEllipsize(android.text.TextUtils.TruncateAt.END);title.setTypeface(null,Typeface.BOLD);
++        title.setContentDescription("当前编辑："+page().name+" · "+regionName(slot)+" · "+Scene.typeName(component().type));context.addView(title,new LinearLayout.LayoutParams(0,dp(40),1));
++        TextView replace=UiKit.compactButton(this,"更换组件",UiKit.ROW,UiKit.ROW_BORDER,UiKit.TEXT,()->openSelector(true));context.addView(replace);header.addView(context);
++        if(page().count()>1){
++            HorizontalScrollView regions=new HorizontalScrollView(this);regions.setHorizontalScrollBarEnabled(false);LinearLayout row=UiKit.row(this);
++            for(int i=0;i<page().count();i++){final int n=i;TextView button=UiKit.compactButton(this,regionName(i),i==slot?UiKit.ACTIVE_BG:UiKit.PANEL,0,i==slot?UiKit.ACCENT:UiKit.MUTED,()->{slot=n;browsingPages=false;libraryType=component().type;selectionBaseline();show();});row.addView(button);}
++            regions.addView(row);extras.addView(regions);
++        }
++        LinearLayout tabs=UiKit.row(this);String[] names={"内容","外观","配色"};
++        for(int i=0;i<3;i++){final int n=i;TextView button=UiKit.compactButton(this,names[i],studioPanel==i?UiKit.ACTIVE_BG:UiKit.PANEL,0,studioPanel==i?UiKit.ACCENT:UiKit.MUTED,()->{history.finish();studioPanel=n;browsingPages=false;show();});button.setTag("studio:tab:"+i);tabs.addView(button,new LinearLayout.LayoutParams(0,-2,1));}extras.addView(tabs);header.addView(extras);
++        host.addView(header,new LinearLayout.LayoutParams(-1,-2));
++        LinearLayout body=scrollColumn(host,"studio:"+studioPanel+":"+pageId+":"+slot);body.setTag("studio:body");
++        if(host instanceof EditorPane){EditorPane pane=(EditorPane)host;pane.fixedHeader=header;pane.extras=extras;pane.body=body;pane.compact=false;}
++        if(!prefs.getBoolean("studio_guided",false)){UiKit.note(this,body,"点击预览中的区域选择组件；外观和配色随改随存，可撤销。");UiKit.action(this,body,"知道了",()->{prefs.edit().putBoolean("studio_guided",true).apply();show();});}
++        if(studioPanel==2)renderStudioPalette(body,innerWidth);
++        else if(studioPanel==1){
++            LinearLayout style=UiKit.card(this,body,"组件外观",null);UiKit.action(this,style,"更换外观 · "+ComponentStyles.names(component().type)[ComponentStyles.selectedIndex(component())]+"  →",()->openSelector(false));
++            if(component().type.equals("clock")){ComponentInspector.render(this,prefs,body,component(),0,paletteScope,innerWidth,inspectorHost());ComponentInspector.render(this,prefs,body,component(),1,paletteScope,innerWidth,inspectorHost());}
++            else{UiKit.slider(this,style,"显示大小",component().options.optInt("scale",100),75,125,"%",v->{Scene.put(component().options,"scale",v);changed();});UiKit.toggle(this,style,"显示组件边框",component().bool("card",false),v->{Scene.put(component().options,"card",v);changed();});}
++        }else ComponentInspector.render(this,prefs,body,component(),component().type.equals("clock")?3:0,paletteScope,innerWidth,inspectorHost());
++        savedStatus=UiKit.text(this,"已自动保存",10,UiKit.MUTED);savedStatus.setPadding(dp(2),dp(8),0,0);body.addView(savedStatus);
++
++    }
++    private void openSelector(boolean types){history.finish();componentPicker=types;libraryType=component().type;portraitStyleScreen=true;show();}
++    private void renderStudioPalette(LinearLayout body,int innerWidth){
++        String[] names={"全场景","当前页","当前组件"};
++        LinearLayout card=UiKit.card(this,body,previewNight?"夜间配色":"日间配色",null);
++        UiKit.action(this,card,"应用范围 · "+names[Math.min(2,paletteScope)]+" ▾",()->new StudioAlertBuilder().setTitle("配色应用范围").setSingleChoiceItems(names,Math.min(2,paletteScope),(d,n)->{history.finish();paletteScope=n;colorState.hex=null;colorContext="";d.dismiss();show();}).show());
++        if(previewNight){UiKit.toggle(this,card,"此场景使用独立夜间配色",Boolean.TRUE.equals(draft.ownNightColors),v->{draft.ownNightColors=v;changed();show();});if(!Boolean.TRUE.equals(draft.ownNightColors)){UiKit.note(this,card,"当前沿用日间配色。开启后可独立编辑夜间颜色。");return;}}
++        JSONObject selected=theme(paletteScope);UiKit.note(this,card,selected.length()==0?"颜色来自上层主题":"此范围已有独立配色 · 可恢复跟随上层");
++        int overrides=0;for(Scene.Page page:draft.pages){if(paletteScope==0&&(previewNight?page.nightTheme:page.theme).length()>0)overrides++;if(paletteScope==0||page.id.equals(pageId)&&paletteScope==1)for(int i=0;i<page.count();i++)if((previewNight?page.slots[i].nightTheme:page.slots[i].theme).length()>0)overrides++;}
++        if(overrides>0){final int scope=paletteScope;UiKit.note(this,card,"有 "+overrides+" 处独立配色，会优先于本次修改。");UiKit.action(this,card,"让下级恢复跟随",()->{for(Scene.Page page:draft.pages){if(scope==0)clearTheme(previewNight?page.nightTheme:page.theme);if(scope==0||scope==1&&page.id.equals(pageId))for(Scene.Component c:page.slots)clearTheme(previewNight?c.nightTheme:c.theme);}changed();show();showNotice("已恢复跟随");});}
++        palette(card,paletteScope);
++    }
++    private void clearTheme(JSONObject theme){ArrayList<String> keys=new ArrayList<>();for(Iterator<String> i=theme.keys();i.hasNext();)keys.add(i.next());for(String key:keys)theme.remove(key);}
+ 
+     /** Secondary full-screen Style Gallery in portrait (style previews are self-contained live ClockFaces). */
+     private void renderPortraitStyleScreen(LinearLayout root) {
+-        UiKit.WrapRow top = new UiKit.WrapRow(this, 6, 4);
+-        top.setPadding(dp(10), dp(8), dp(10), dp(6));
+-        top.setBackgroundColor(UiKit.PANEL);
+-        top.addView(UiKit.compactButton(this, "← 返回实时预览", UiKit.ACTIVE_BG, UiKit.ACTIVE_BORDER, UiKit.ACCENT, () -> {
+-            portraitStyleScreen = false;
+-            tab = 1;
+-            show();
+-        }));
+-        TextView target = UiKit.text(this, page().name + " / 槽位 " + (slot + 1), 12, UiKit.TEXT);
+-        target.setTypeface(null, Typeface.BOLD);
+-        target.setMinHeight(dp(31));
+-        top.addView(target);
+-        root.addView(top, new LinearLayout.LayoutParams(-1, -2));
+-
+-        LinearLayout body = scrollColumn(root, "portraitGallery:" + libraryType);
+-        renderStyleGalleryBody(body, Math.max(220, widthDp - 24));
+-    }
+-
+-    private void renderStyleGalleryBody(LinearLayout host, int innerWidth) {
+-        if (libraryType == null) libraryType = component().type;
+-        LinearLayout catCard = UiKit.card(this, host, "组件类别", null);
+-        UiKit.chips(
+-            this,
+-            catCard,
+-            innerWidth,
+-            Scene.TYPE_NAMES,
+-            Arrays.asList(Scene.TYPES).indexOf(libraryType),
+-            n -> { libraryType = Scene.TYPES[n]; show(); }
+-        );
+-
+-        String type = libraryType;
+-        String[] names = ComponentStyles.names(type);
+-
+-        LinearLayout galleryCard = UiKit.card(this, host, "可选样式预览", null);
+-        int cols = names.length == 4 ? 2 : innerWidth >= 480 ? 3 : 2;
+-        for (int row = 0; row < (names.length + cols - 1) / cols; row++) {
+-            LinearLayout pair = UiKit.row(this);
+-            for (int col = 0; col < cols && row * cols + col < names.length; col++) {
+-                final int n = row * cols + col;
+-                boolean active = isVariantActive(component(), type, n);
+-                LinearLayout card = UiKit.column(this);
+-                card.setPadding(dp(6), dp(6), dp(6), dp(6));
+-                card.setBackground(UiKit.surface(
+-                    this,
+-                    active ? UiKit.ACTIVE_BG : UiKit.ROW,
+-                    10,
+-                    active ? UiKit.ACTIVE_BORDER : UiKit.ROW_BORDER,
+-                    active ? 1.5f : 1f
+-                ));
+-
+-                Scene sample = draft.copy();
+-                Scene.Page p = sample.pages.get(sample.index(pageId));
+-                p.layout = 0;
+-                Scene.Component c = Scene.Component.from(component().json());
+-                p.slots[0] = c;
+-                applyVariant(c, type, n);
+-                if (type.equals("todo") && TodoItems.all(c).length() == 0) {
+-                    TodoItems.add(c, "准备明天的计划");
+-                    TodoItems.add(c, "阅读二十分钟");
+-                }
+-                int ph = policy.shortWindow ? 82 : 104;
+-                AspectPreview frame = new AspectPreview(this);
+-                frame.setBackground(UiKit.surface(this, 0xff000000, 9, 0xff222d3d, 1f));
+-                ClockFace f = new ClockFace(this, prefs);
+-                f.managedRefresh = true;
+-                f.bind(sample, sample.index(pageId));
+-                f.nightPreview = previewNight;
+-                f.demo = true;
+-                frame.addView(f);
+-                previews.add(f);
+-                card.addView(frame, new LinearLayout.LayoutParams(-1, dp(ph)));
+-
+-                Runnable choose = () -> {
+-                    applyVariant(component(), type, n);
+-                    page().refreshName();
+-                    changed();
+-                    show();
+-                };
+-                f.setOnClickListener(v -> choose.run());
+-
+-                TextView name = UiKit.text(this, (active ? "✓ " : "") + names[n], 11.5f, active ? UiKit.ACCENT : UiKit.TEXT);
+-                name.setGravity(Gravity.CENTER);
+-                name.setPadding(0, dp(4), 0, dp(1));
+-                if (active) name.setTypeface(null, Typeface.BOLD);
+-                card.addView(name);
+-                name.setOnClickListener(v -> choose.run());
+-                card.setContentDescription(Scene.typeName(type) + " · " + names[n] + (active ? " · 已选择" : " · 点击应用"));
+-                card.setTag("style:" + type + ":" + ComponentStyles.ids(type)[n]);
+-                card.setOnClickListener(v -> choose.run());
+-
+-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1);
+-                int rightMargin = (col + 1 < cols && row * cols + col + 1 < names.length) ? dp(6) : 0;
+-                lp.setMargins(0, 0, rightMargin, dp(6));
+-                pair.addView(card, lp);
+-            }
+-            for (int empty = Math.min(cols, names.length - row * cols); empty < cols; empty++) {
+-                pair.addView(new View(this), new LinearLayout.LayoutParams(0, 0, 1));
+-            }
+-            galleryCard.addView(pair);
+-        }
+-
+-        UiKit.action(this, host, "前往编辑参数与配色  →", () -> {
+-            portraitStyleScreen = false;
+-            tab = 1;
+-            inspectorGroup = 0;
+-            show();
+-        });
++        LinearLayout top=UiKit.row(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(10),dp(6),dp(10),dp(4));
++        top.addView(UiKit.compactButton(this,"← 返回编辑",UiKit.ROW,UiKit.ROW_BORDER,UiKit.ACCENT,()->{portraitStyleScreen=componentPicker=false;tab=1;show();}));
++        TextView target=UiKit.text(this,(componentPicker?"更换组件":"更换外观")+" · "+regionName(slot),12,UiKit.TEXT);target.setPadding(dp(8),0,0,0);target.setMaxLines(2);top.addView(target,new LinearLayout.LayoutParams(0,-2,1));root.addView(top);
++        LinearLayout body=scrollColumn(root,"selector:"+componentPicker+":"+libraryType);renderStyleGalleryBody(body,Math.max(120,widthDp-44));
++    }
++    private void renderStyleGalleryBody(LinearLayout host,int innerWidth){
++        if(libraryType==null)libraryType=component().type;
++        String[] names=componentPicker?Scene.TYPE_NAMES:ComponentStyles.names(libraryType);
++        int cols=Math.max(1,Math.min(names.length==4?2:3,innerWidth/Math.round(145*Math.max(1f,getResources().getConfiguration().fontScale*UiKit.customFontScale*.8f))));
++        for(int start=0;start<names.length;start+=cols){
++            LinearLayout row=UiKit.row(this);
++            for(int k=start;k<Math.min(start+cols,names.length);k++){
++                final int n=k;final String type=componentPicker?Scene.TYPES[k]:libraryType;final boolean types=componentPicker;
++                boolean active=types?component().type.equals(type):isVariantActive(component(),type,n);
++                LinearLayout card=UiKit.column(this);card.setPadding(dp(8),dp(8),dp(8),dp(8));card.setBackground(UiKit.surface(this,active?UiKit.ACTIVE_BG:UiKit.ROW,12,active?UiKit.ACTIVE_BORDER:UiKit.ROW_BORDER,1));
++                Scene sample=draft.copy();Scene.Page page=sample.pages.get(sample.index(pageId));page.layout=0;Scene.Component c=Scene.Component.from(component().json());page.slots[0]=c;
++                if(types)c.setType(type);else applyVariant(c,type,n);
++                if(type.equals("todo")&&TodoItems.all(c).length()==0)TodoItems.add(c,"准备明天的计划");
++                AspectPreview frame=new AspectPreview(this);ClockFace face=new ClockFace(this,prefs);face.managedRefresh=true;face.demo=true;face.bind(sample,sample.index(pageId));face.nightPreview=previewNight;frame.addView(face);previews.add(face);card.addView(frame,new LinearLayout.LayoutParams(-1,dp(policy.shortWindow?90:120)));
++                TextView name=UiKit.text(this,(active?"✓ ":"")+names[k],12,active?UiKit.ACCENT:UiKit.TEXT);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(6),0,dp(4));card.addView(name);
++                Runnable choose=()->{history.finish();if(types)component().setType(type);else applyVariant(component(),type,n);libraryType=component().type;portraitStyleScreen=componentPicker=false;browsingPages=false;tab=1;changed();show();};
++                face.setOnClickListener(v->choose.run());name.setOnClickListener(v->choose.run());card.setOnClickListener(v->choose.run());card.setContentDescription((types?"更换组件 · ":"应用外观 · ")+names[k]);card.setTag(types?"component:"+type:"style:"+type+":"+ComponentStyles.ids(type)[n]);
++                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.setMargins(0,0,k+1<Math.min(start+cols,names.length)?dp(8):0,dp(8));row.addView(card,lp);
++            }
++            for(int i=Math.min(start+cols,names.length);i<start+cols;i++)row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));host.addView(row);
++        }
+     }
+ 
+     private boolean isVariantActive(Scene.Component c, String type, int variant) {
+@@ -912,10 +871,7 @@
+             public void onSelectPaletteScope(int scope) {
+                 paletteScope = scope;
+                 colorState.hex = null;
+-                if (scope == 3) {
+-                    previewNight = true;
+-                    prefs.edit().putBoolean("nightOwnColors", true).apply();
+-                }
++                if (scope == 3) { paletteScope=0;previewNight=true; }
+                 show();
+             }
+             public void onEmbedPalette(LinearLayout host, int scope) { palette(host, scope); }
+@@ -931,97 +887,7 @@
+         };
+     }
+ 
+-    private void pageTools(LinearLayout l, int innerWidth) {
+-        Scene.Page p = page();
+-        LinearLayout card = UiKit.card(this, l, p.name, null);
+-        UiKit.chips(
+-            this,
+-            card,
+-            innerWidth,
+-            new String[] { p.id.equals(draft.home) ? "当前主页" : "设为主页", "重命名", "复制" },
+-            p.id.equals(draft.home) ? 0 : -1,
+-            n -> {
+-                if (n == 0) {
+-                    draft.home = p.id;
+-                    changed();
+-                    show();
+-                } else if (n == 1) {
+-                    input("页面名称", p.name, value -> {
+-                        p.name = value;
+-                        p.autoName = false;
+-                        changed();
+-                        show();
+-                    });
+-                } else {
+-                    Scene.Page copy = p.duplicate();
+-                    draft.pages.add(draft.index(p.id) + 1, copy);
+-                    pageId = copy.id;
+-                    changed();
+-                    show();
+-                }
+-            }
+-        );
+-        UiKit.toggle(this, card, "名称跟随组件", p.autoName, value -> {
+-            p.autoName = value;
+-            p.refreshName();
+-            changed();
+-            show();
+-        });
+-        UiKit.action(this, card, "移动到…", () -> {
+-            String[] positions = new String[draft.pages.size()];
+-            for (int i = 0; i < positions.length; i++) positions[i] = "第 " + (i + 1) + " 页";
+-            new AlertDialog.Builder(this)
+-                .setTitle("页面顺序")
+-                .setItems(positions, (dialog, n) -> {
+-                    draft.movePage(p.id, n);
+-                    changed();
+-                    show();
+-                })
+-                .show();
+-        });
+-        UiKit.dangerAction(this, card, "删除此页", () -> {
+-            if (draft.pages.size() == 1) {
+-                Toast.makeText(this, "至少保留一个页面", Toast.LENGTH_SHORT).show();
+-                return;
+-            }
+-            new AlertDialog.Builder(this)
+-                .setTitle("删除「" + p.name + "」？")
+-                .setMessage("删除后将自动保存，无法撤销。")
+-                .setPositiveButton("删除", (d, w) -> {
+-                    draft.remove(p);
+-                    pageId = draft.home;
+-                    slot = 0;
+-                    changed();
+-                    show();
+-                })
+-                .setNegativeButton("取消", null)
+-                .show();
+-        });
+-    }
+-
+-    private void pageOptions(LinearLayout l, int innerWidth) {
+-        LinearLayout layoutCard = UiKit.card(this, l, "页面布局与槽位", null);
+-        UiKit.chips(this, layoutCard, innerWidth, Dashboard.LAYOUTS, page().layout, n -> {
+-            page().layout = n;
+-            slot = Math.min(slot, page().count() - 1);
+-            changed();
+-            show();
+-        });
+-        for (int i = 0; i < page().count(); i++) {
+-            final int n = i;
+-            UiKit.action(this, layoutCard, "编辑组件 " + (i + 1) + " · " + Scene.typeName(page().slots[i].type) + "  →", () -> {
+-                slot = n;
+-                tab = 1;
+-                inspectorGroup = 0;
+-                show();
+-            });
+-        }
+-
+-        LinearLayout themeCard = UiKit.card(this, l, "页面配色", null);
+-        palette(themeCard, 1);
+-    }
+-
+-    private boolean parallelSettings() { return windowWidthDp > heightDp; }
++    private boolean parallelSettings() { return widthDp >= Math.round(550*Math.max(1f,getResources().getConfiguration().fontScale*UiKit.customFontScale*.8f)) && heightDp>=260; }
+ 
+     private int settingsMenuWidthDp() { return Math.min(220, Math.max(140, Math.round(widthDp * .27f))); }
+ 
+@@ -1114,15 +980,15 @@
+         
+ 
+                 LinearLayout nightThemeCard = UiKit.card(this, l, "独立夜间配色", null);
+-                prefToggle(nightThemeCard, "使用独立夜间配色", "nightOwnColors", false);
++                UiKit.toggle(this,nightThemeCard,"此场景使用独立夜间配色",Boolean.TRUE.equals(draft.ownNightColors),v->{draft.ownNightColors=v;changed();show();});
+                 UiKit.action(this, nightThemeCard, "应用暖红夜间预设", () -> {
+                     ColorThemes.apply(draft.nightTheme, 11);
+-                    prefs.edit().putBoolean("nightOwnColors", true).apply();
++                    draft.ownNightColors=true;
+                     previewNight = true;
+                     changed();
+                     show();
+                 });
+-                palette(nightThemeCard, 3);
++                UiKit.action(this,nightThemeCard,"编辑夜间配色  →",()->{previewNight=true;paletteScope=0;studioPanel=2;tab=1;browsingPages=false;show();});
+                 break;
+             }
+             case 1: {
+@@ -1130,7 +996,7 @@
+                 UiKit.action(this, homeCard, "主页 · " + draft.pages.get(draft.homeIndex()).name, () -> {
+                     String[] names = new String[draft.pages.size()];
+                     for (int i = 0; i < names.length; i++) names[i] = draft.pages.get(i).name;
+-                    new AlertDialog.Builder(this)
++                    new StudioAlertBuilder()
+                         .setTitle("指定主页")
+                         .setSingleChoiceItems(names, draft.homeIndex(), (d, n) -> {
+                             draft.home = draft.pages.get(n).id;
+@@ -1218,7 +1084,7 @@
+                     changed();
+                     show();
+                 }));
+-                UiKit.dangerAction(this, currentCard, "恢复默认初始场景", () -> withSavedScene(() -> {
++                UiKit.dangerAction(this, currentCard, "恢复默认初始场景", () -> withRecovery("替换场景前", () -> {
+                     SharedPreferences fresh = getSharedPreferences("default_template", 0);
+                     fresh.edit().clear().commit();
+                     draft = Scene.load(fresh);
+@@ -1229,24 +1095,27 @@
+                     show();
+                 }));
+ 
+-                LinearLayout savedCard = UiKit.card(this, l, "已保存的场景", null);
++                UiKit.action(this,currentCard,"恢复点与找回配置  →",this::showRecoveryPoints);
++                LinearLayout savedCard = UiKit.card(this, l, "已保存的完整场景快照", "包含待办内容与完成状态；载入会替换当前场景");
+                 ArrayList<String> names = new ArrayList<>();
+                 for (String key : prefs.getAll().keySet()) {
+                     if (key.startsWith("scene_saved_")) names.add(key.substring(12));
+                 }
+                 Collections.sort(names);
+                 for (String name : names) {
+-                    UiKit.action(this, savedCard, name, () -> new AlertDialog.Builder(this)
++                    UiKit.action(this, savedCard, name, () -> new StudioAlertBuilder()
+                         .setTitle(name)
+                         .setItems(new String[] { "载入场景", "删除保存的场景" }, (d, n) -> {
+                             if (n == 1) {
+-                                prefs.edit().remove("scene_saved_" + name).apply();
+-                                show();
++                                saveRecoveryPoint("删除快照「"+name+"」前");
++                                prefs.edit().remove("scene_saved_" + name).apply();changed();
++                                show();showNotice("已删除场景快照");
+                             } else {
+-                                withSavedScene(() -> {
++                                withRecovery("替换场景前", () -> {
+                                     Scene s = Scene.parse(prefs.getString("scene_saved_" + name, ""));
+                                     if (s != null) {
+-                                        draft = s;
++                                    if(s.ownNightColors==null)s.ownNightColors=prefs.getBoolean("nightOwnColors",false);
++                    draft = s;
+                                         pageId = s.home;
+                                         slot = 0;
+                                         libraryType = component().type;
+@@ -1266,7 +1135,7 @@
+                     if (key.startsWith("saved_")) legacy.add(key.substring(6));
+                 }
+                 for (String name : legacy) {
+-                    UiKit.action(this, savedCard, "旧版搭配 · " + name, () -> withSavedScene(() -> {
++                    UiKit.action(this, savedCard, "旧版搭配 · " + name, () -> withRecovery("替换场景前", () -> {
+                         SharedPreferences migration = getSharedPreferences("legacy_import", 0);
+                         migration.edit().clear().commit();
+                         Dashboard.restore(migration, prefs.getString("saved_" + name, ""));
+@@ -1335,9 +1204,10 @@
+         Collections.sort(names);
+         for (String name : names) {
+             items.add("载入场景 · " + name);
+-            actions.add(() -> withSavedScene(() -> {
++            actions.add(() -> withRecovery("替换场景前", () -> {
+                 Scene s = Scene.parse(prefs.getString("scene_saved_" + name, ""));
+                 if (s != null) {
++                    if(s.ownNightColors==null)s.ownNightColors=prefs.getBoolean("nightOwnColors",false);
+                     draft = s;
+                     pageId = s.home;
+                     slot = 0;
+@@ -1350,7 +1220,7 @@
+         items.add("打开完整场景管理  →");
+         actions.add(() -> { navExpanded = false; tab = 3; category = 4; show(); });
+ 
+-        new AlertDialog.Builder(this)
++        new StudioAlertBuilder()
+             .setTitle("当前场景 · " + draft.name)
+             .setItems(items.toArray(new String[0]), (d, which) -> actions.get(which).run())
+             .setNegativeButton("关闭", null)
+@@ -1390,16 +1260,17 @@
+     }
+ 
+     private JSONObject theme(int scope) {
+-        return scope == 0 ? draft.theme : scope == 1 ? page().theme : scope == 2 ? component().theme : draft.nightTheme;
+-    }
+-
+-    private int resolvedColor(int scope, int role) {
+-        String key = Scene.ROLES[role];
+-        if (role == 0) return Color.BLACK;
+-        int value = draft.theme.optInt(key, Scene.DEFAULT_COLORS[role]);
+-        if (scope == 0) return value;
+-        if (scope == 3) return draft.nightTheme.optInt(key, key.equals("background") ? 0xff000000 : value);
+-        return draft.color(page(), scope == 2 ? component() : null, key, previewNight, prefs.getBoolean("nightOwnColors", false));
++        boolean night=scope==3||previewNight;
++        return scope==0?(night?draft.nightTheme:draft.theme):scope==1?(night?page().nightTheme:page().theme):scope==2?(night?component().nightTheme:component().theme):draft.nightTheme;
++    }
++
++    private int resolvedColor(int scope,int role){
++        if(role==0)return Color.BLACK;
++        String key=Scene.ROLES[role];boolean night=scope==3||previewNight;
++        int value=draft.theme.optInt(key,Scene.DEFAULT_COLORS[role]);
++        if(night)value=draft.nightTheme.optInt(key,value);
++        if(scope==1||scope==2)value=(night?page().nightTheme:page().theme).optInt(key,value);
++        if(scope==2)value=(night?component().nightTheme:component().theme).optInt(key,value);return value;
+     }
+ 
+     private void rememberColor(String value) {
+@@ -1413,7 +1284,7 @@
+     }
+ 
+     private void palette(LinearLayout host, int scope) {
+-        String key = tab + ":" + pageId + ":" + component().id + ":" + scope;
++        String key = tab + ":" + pageId + ":" + component().id + ":" + scope + ":" + previewNight;
+         if (!key.equals(colorContext)) {
+             colorState.hex = null;
+             colorContext = key;
+@@ -1425,7 +1296,8 @@
+             colorState,
+             prefs.getString("recentColors", ""),
+             this::changed,
+-            this::rememberColor
++            this::rememberColor,
++            scope==2?component():null, scope==3||previewNight, scope==0||scope==3?"恢复默认":"恢复跟随"
+         );
+         host.addView(colorEditor, new LinearLayout.LayoutParams(-1, -2));
+     }
+@@ -1502,7 +1374,7 @@
+ 
+     private void searchCity(String query) {
+         if (searchDialog != null) searchDialog.dismiss();
+-        AlertDialog progress = new AlertDialog.Builder(this)
++        AlertDialog progress = new StudioAlertBuilder()
+             .setMessage("正在搜索城市…")
+             .setNegativeButton("取消", null)
+             .create();
+@@ -1514,7 +1386,7 @@
+             if (searchDialog == progress) searchDialog = null;
+             if (isFinishing() || isDestroyed()) return;
+             if (cities == null || cities.length() == 0) {
+-                new AlertDialog.Builder(this)
++                new StudioAlertBuilder()
+                     .setMessage(error.isEmpty() ? "未找到城市，可换用其他城市名称、当前位置或经纬度。" : error)
+                     .setNeutralButton("使用当前位置", (d, n) -> useCurrentLocation())
+                     .setPositiveButton("经纬度设置", (d, n) -> coordinates())
+@@ -1541,7 +1413,7 @@
+         if (!WeatherLocation.allowed(this)) {
+             if (prefs.getBoolean("weatherLocationAsked", false)
+                 && !shouldShowRequestPermissionRationale(android.Manifest.permission.ACCESS_COARSE_LOCATION)) {
+-                new AlertDialog.Builder(this)
++                new StudioAlertBuilder()
+                     .setMessage("定位权限尚未开启，可在应用权限中允许位置信息，或继续搜索城市。")
+                     .setPositiveButton("打开应用权限", (d, n) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))))
+                     .setNeutralButton("搜索城市", (d, n) -> city())
+@@ -1555,7 +1427,7 @@
+         }
+         prefs.edit().remove("weatherLocationAsked").apply();
+         cancelWeatherLocation();
+-        AlertDialog progress = new AlertDialog.Builder(this)
++        AlertDialog progress = new StudioAlertBuilder()
+             .setMessage("正在获取当前位置…")
+             .setNegativeButton("取消", null)
+             .create();
+@@ -1571,7 +1443,7 @@
+                 setCity(name, String.format(Locale.ROOT, "%.4f", loc.getLatitude()), String.format(Locale.ROOT, "%.4f", loc.getLongitude()));
+                 Toast.makeText(this, "已定位到 " + name, Toast.LENGTH_SHORT).show();
+             } else {
+-                new AlertDialog.Builder(this)
++                new StudioAlertBuilder()
+                     .setMessage(error)
+                     .setPositiveButton(error.contains("系统定位未开启") ? "定位设置" : "重试", (d, n) -> {
+                         if (error.contains("系统定位未开启")) startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+@@ -1636,7 +1508,7 @@
+     private void musicPermission() {
+         String value = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+         if (value == null || !value.contains(getPackageName())) {
+-            new AlertDialog.Builder(this)
++            new StudioAlertBuilder()
+                 .setMessage("音乐控制需要通知使用权，仅读取媒体会话。")
+                 .setPositiveButton("前往授权", (d, n) -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)))
+                 .setNegativeButton("取消", null)
+@@ -1646,9 +1518,26 @@
+         }
+     }
+ 
++    final class StudioAlertBuilder extends AlertDialog.Builder {
++        StudioAlertBuilder(){super(MainActivity.this);}
++        public AlertDialog show(){AlertDialog dialog=super.show();studioDialog=dialog;fitDialog(dialog);return dialog;}
++    }
++    private void fitDialog(Dialog dialog){
++        if(dialog.getWindow()==null)return;
++        Rect area=dialogSafeBounds();WindowMetrics metrics=getWindowManager().getCurrentWindowMetrics();Insets bars=metrics.getWindowInsets().getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
++        int width=Math.min(dp(460),Math.max(1,area.width()-dp(20))),height=Math.max(1,area.height()-dp(20));
++        View decor=dialog.getWindow().getDecorView();decor.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.AT_MOST));
++        WindowManager.LayoutParams lp=dialog.getWindow().getAttributes();lp.width=width;lp.height=Math.min(height,decor.getMeasuredHeight());lp.gravity=Gravity.TOP|Gravity.LEFT;
++        lp.x=area.left-bars.left+(area.width()-width)/2;lp.y=Math.max(0,area.top-bars.top+(area.height()-lp.height)/2);dialog.getWindow().setAttributes(lp);
++    }
++    void deletedForEditor(String label){showNotice(label);}
++    AlertDialog.Builder alertForEditor(){return new StudioAlertBuilder();}
++
+     private void message(String value) {
+-        new AlertDialog.Builder(this).setMessage(value).setPositiveButton("好", null).show();
+-    }
++        new StudioAlertBuilder().setMessage(value).setPositiveButton("好", null).show();
++    }
++
++    private void withRecovery(String label,Runnable action){persistDraft();saveRecoveryPoint(label);action.run();}
+ 
+     private void withSavedScene(Runnable action) {
+         persistDraft();
+@@ -1662,7 +1551,7 @@
+             return;
+         }
+         if (portraitStyleScreen) {
+-            portraitStyleScreen = false;
++            componentPicker=false;portraitStyleScreen = false;
+             tab = 1;
+             show();
+             return;
+@@ -1677,6 +1566,9 @@
+ 
+     protected void onSaveInstanceState(Bundle out) {
+         rememberScroll();
++        history.finish();
++        out.putBoolean("browsingPages",browsingPages);out.putBoolean("previewExpanded",previewExpanded);out.putInt("studioPanel",studioPanel);out.putBoolean("componentPicker",componentPicker);
++        out.putStringArrayList("undoStates",history.undoStates());out.putStringArrayList("redoStates",history.redoStates());
+         out.putBoolean("pageOverview", pageOverview);
+         out.putBoolean("navExpanded", navExpanded);
+         out.putBoolean("portraitStyleScreen", portraitStyleScreen);
+@@ -1704,21 +1596,18 @@
+         super.onConfigurationChanged(c);
+         show();
+         if (inputDialog != null) inputDialog.resize();
++        if(studioDialog!=null&&studioDialog.isShowing())fitDialog(studioDialog);
+     }
+ 
+     protected void onResume() {
+         super.onResume();
+         // Fullscreen task changes are saved there and reflected when returning to the studio.
+-        String saved = prefs.getString(Scene.KEY, baseline);
+-        if (!saved.equals(baseline)) {
+-            Scene restored = Scene.parse(saved);
+-            if (restored != null) {
+-                draft = restored;
+-                baseline = saved;
+-                pageId = draft.pages.get(draft.index(pageId)).id;
+-                show();
+-            }
+-        }
++        String saved=prefs.getString(Scene.KEY,baseline);Scene restored=Scene.load(prefs);String normalized=restored.json();
++        if(!normalized.equals(baseline)){
++            String previous=historyState;draft=restored;pageId=page().id;slot=Math.min(slot,page().count()-1);baseline=normalized;
++            historyState=captureEditorState();history.record(previous,historyState);show();
++        }
++        if(!saved.equals(normalized))prefs.edit().putString(Scene.KEY,normalized).apply();
+         if (!testMode) {
+             ClockActivity.applyExtraDim(this, prefs, false, 0f);
+             AlarmData.observe(this, alarmChanged);
+@@ -1746,6 +1635,7 @@
+     }
+ 
+     protected void onPause() {
++        history.finish();
+         persistDraft();
+         AlarmData.forget(this, alarmChanged);
+         cancelWeatherLocation();
+@@ -1767,15 +1657,16 @@
+     void selectForCheck(int tabIndex, int settingsGroup) {
+         tab = tabIndex;
+         category = settingsGroup;
+-        portraitStyleScreen = false;
++        studioPanel=tabIndex==0?1:0;browsingPages=tabIndex==2;
++        portraitStyleScreen = tabIndex==0;
+         navExpanded = false;
+     }
+-    void inspectorForCheck(int group) { inspectorGroup = group; }
++    void inspectorForCheck(int group) { inspectorGroup=group;studioPanel=component().type.equals("clock")?(group==2?2:group==3?0:1):(group==1?2:0); }
+     void paletteModeForCheck(int mode) { colorState.mode = mode; colorState.hex = null; }
+     void libraryForCheck(String type) {
+         libraryType = type;
+         tab = 0;
+-        portraitStyleScreen = policy != null && !policy.parallel;
++        portraitStyleScreen=true;componentPicker=false;
+     }
+     boolean overviewForCheck() { return pageOverview; }
+     PaletteEditor colorEditorForCheck() { return colorEditor; }
+@@ -1789,10 +1680,11 @@
+         draft = Scene.load(prefs);
+         baseline = draft.json();
+         pageId = draft.home;
++        historyState = captureEditorState();
+     }
+ 
+     /** Caps the top Portrait Watch Carousel stage height so lower controls and keyboard input stay visible. */
+-    static final class WatchStageContainer extends LinearLayout {
++    final class WatchStageContainer extends LinearLayout {
+         private final int requestedHeight;
+         WatchStageContainer(Context c, int requestedHeightDp) {
+             super(c);
+@@ -1800,11 +1692,16 @@
+             requestedHeight = UiKit.dp(c, requestedHeightDp);
+         }
+         protected void onMeasure(int w, int h) {
+-            int maxAvail = MeasureSpec.getSize(h);
+-            int cap = requestedHeight;
+-            if (MeasureSpec.getMode(h) != MeasureSpec.UNSPECIFIED && maxAvail > 0) {
+-                cap = Math.min(requestedHeight, Math.max(UiKit.dp(getContext(), 110), Math.round(maxAvail * 0.52f)));
+-            }
++            int maxAvail=MeasureSpec.getSize(h);float density=getResources().getDisplayMetrics().density;
++            WindowInsets insets=getRootWindowInsets();boolean keyboard=insets!=null?insets.isVisible(WindowInsets.Type.ime()):imeVisible;
++            View tools=findViewWithTag("preview:tools");
++            int cap=UiKit.dp(getContext(),AdaptiveLayout.previewHeight(widthDp,Math.round(maxAvail/density),browsingPages,previewExpanded,keyboard,getResources().getConfiguration().fontScale*UiKit.customFontScale));
++            View header=getChildAt(0);header.measure(w,MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));
++            int headerH=header.getMeasuredHeight();
++            if(tools!=null){tools.setVisibility(View.VISIBLE);tools.measure(w,MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED));tools.setVisibility(keyboard||cap<headerH+tools.getMeasuredHeight()+UiKit.dp(getContext(),80)?View.GONE:View.VISIBLE);}
++            cap=Math.min(Math.max(cap,headerH+UiKit.dp(getContext(),maxAvail<UiKit.dp(getContext(),300)?24:52)),Math.max(0,maxAvail));
++            boolean labels=browsingPages&&cap-headerH-(tools!=null&&tools.getVisibility()==View.VISIBLE?tools.getMeasuredHeight():0)>UiKit.dp(getContext(),100);
++            if(carouselScroll!=null&&carouselScroll.getChildCount()>0){ViewGroup track=(ViewGroup)carouselScroll.getChildAt(0);for(int i=0;i<track.getChildCount();i++){View child=track.getChildAt(i);if(child instanceof ViewGroup)((ViewGroup)child).getChildAt(0).setVisibility(labels?View.VISIBLE:View.GONE);}}
+             super.onMeasure(w, MeasureSpec.makeMeasureSpec(cap, MeasureSpec.EXACTLY));
+         }
+     }
+@@ -2005,7 +1902,7 @@
+                 View track = getChildAt(0);
+                 // Fit the selected cover-ratio preview to the reserved area in both orientations.
+                 int maxW = Math.max(1, getMeasuredWidth() - track.getPaddingLeft() - track.getPaddingRight() - UiKit.dp(getContext(), 8));
+-                int labelH = items.get(0).getChildAt(0).getMeasuredHeight();
++                int labelH = items.get(0).getChildAt(0).getVisibility()==View.GONE?0:items.get(0).getChildAt(0).getMeasuredHeight();
+                 int previewH = Math.max(1, Math.min(Math.round(maxW * 1248f / 1972f), vh - labelH - UiKit.dp(getContext(), 16)));
+                 int previewW = Math.round(previewH * 1972f / 1248f);
+                 boolean resized = false;
+@@ -2297,6 +2194,8 @@
+         }
+         private float dpLocal(int n) { return n * getResources().getDisplayMetrics().density; }
+         public boolean onTouchEvent(MotionEvent e) {
++            if(e.getAction()==MotionEvent.ACTION_DOWN){if(getContext() instanceof Activity){View focused=((Activity)getContext()).getCurrentFocus();if(focused instanceof EditText)focused.clearFocus();}UiKit.beginEdit(getContext());}
++            if(e.getAction()==MotionEvent.ACTION_CANCEL){UiKit.endEdit(getContext());if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);return true;}
+             if (e.getAction() == MotionEvent.ACTION_DOWN || e.getAction() == MotionEvent.ACTION_MOVE) {
+                 getParent().requestDisallowInterceptTouchEvent(true);
+                 float h = getHeight() - dpLocal(22);
+@@ -2310,6 +2209,7 @@
+                 return true;
+             }
+             if (e.getAction() == MotionEvent.ACTION_UP) {
++                UiKit.endEdit(getContext());if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);
+                 performClick();
+                 return true;
+             }
+--- before/app/src/main/java/com/foldstandby/clock/PaletteEditor.java
++++ after/app/src/main/java/com/foldstandby/clock/PaletteEditor.java
+@@ -24,6 +24,10 @@
+     private MainActivity.HsvPicker picker;
+     private View sample;
+     private boolean fromPicker;
++    private final Scene.Component component;
++    private final boolean night;
++    private final String resetLabel;
++    private boolean hexTransaction;
+ 
+     private final ViewTreeObserver.OnGlobalLayoutListener keepInputVisible = () -> post(this::ensureInputVisible);
+ 
+@@ -48,11 +52,16 @@
+     }
+ 
+     protected void onDetachedFromWindow() {
++        finishInput();
+         getViewTreeObserver().removeOnGlobalLayoutListener(keepInputVisible);
+         super.onDetachedFromWindow();
+     }
+ 
+     PaletteEditor(Context context, JSONObject theme, IntUnaryOperator resolved, State state, String recents, Runnable changed, Consumer<String> recent) {
++        this(context,theme,resolved,state,recents,changed,recent,null,false,"恢复跟随");
++    }
++    PaletteEditor(Context context, JSONObject theme, IntUnaryOperator resolved, State state, String recents, Runnable changed, Consumer<String> recent,
++                  Scene.Component component, boolean night, String resetLabel) {
+         super(context);
+         setOrientation(VERTICAL);
+         this.theme = theme;
+@@ -63,8 +72,21 @@
+         this.changed = changed;
+         this.recent = recent;
+         this.recentColors = recents;
++        this.component=component;this.night=night;this.resetLabel=resetLabel;
++        if(!visibleRole(state.role)){state.role=component!=null&&(component.type.equals("clock")||component.type.equals("world")||component.type.equals("focus"))?1:3;}
+         build();
+     }
++    private boolean visibleRole(int role){
++        if(component==null)return role>0;
++        boolean clock=component.type.equals("clock"),analog=clock&&(component.style.equals("analog")||component.style.equals("industrial"));
++        if(role==1)return clock||component.type.equals("world")||component.type.equals("focus");
++        if(role==2)return true;
++        if(role==10)return !clock||analog||component.style.equals("flip")||component.bool("card",false);
++        if(role==3)return !clock;
++        if(role>=4&&role<=9)return analog;
++        return false;
++    }
++    private void finishInput(){if(hexTransaction){hexTransaction=false;UiKit.endEdit(getContext());}}
+ 
+     private int dp(float value) { return UiKit.dp(getContext(), value); }
+ 
+@@ -83,6 +105,7 @@
+     private void gap(int height) { UiKit.gap(getContext(), this, height); }
+ 
+     private void build() {
++        finishInput();
+         removeAllViews();
+         hex = null;
+         picker = null;
+@@ -123,7 +146,7 @@
+                     ColorThemes.NAMES[i],
+                     new int[] { cMain, cAccent },
+                     active,
+-                    () -> { ColorThemes.apply(theme, n); state.hex = null; changed.run(); build(); }
++                    () -> { finishInput(); ColorThemes.apply(theme, n); if(night)theme.remove("timeGradient"); state.hex = null; changed.run(); build(); }
+                 );
+                 pill.setContentDescription("配色搭配 · " + ColorThemes.NAMES[i]);
+                 grid.addView(pill);
+@@ -135,7 +158,7 @@
+ 
+         gradients();
+ 
+-        TextView roleLabel = label("颜色 · ● 已自定义", 10.5f, UiKit.MUTED);
++        TextView roleLabel = label(theme.has(Scene.ROLES[state.role])?"颜色 · 已单独设置":"颜色 · 跟随上层", 10.5f, UiKit.MUTED);
+         roleLabel.setPadding(0, dp(2), 0, dp(4));
+         addView(roleLabel);
+ 
+@@ -143,6 +166,7 @@
+         roles.setHorizontalScrollBarEnabled(true);
+         LinearLayout roleRow = UiKit.row(getContext());
+         for (int i = 1; i < Scene.ROLES.length; i++) {
++            if(!visibleRole(i))continue;
+             final int n = i;
+             boolean overridden = theme.has(Scene.ROLES[i]);
+             boolean active = i == state.role;
+@@ -185,7 +209,8 @@
+         hp.setMargins(dp(7), 0, dp(6), 0);
+         inputRow.addView(hex, hp);
+ 
+-        TextView inherit = button("恢复继承", () -> {
++        TextView inherit = button(resetLabel, () -> {
++            finishInput();
+             theme.remove(Scene.ROLES[state.role]);
+             if (state.role == 1) theme.remove("timeGradient");
+             state.hex = null;
+@@ -228,7 +253,10 @@
+             }
+             public void afterTextChanged(Editable e) {}
+         });
+-        hex.setOnFocusChangeListener((v, focused) -> { if (focused) postDelayed(this::ensureInputVisible, 350); });
++        hex.setOnFocusChangeListener((view,focused)->{
++            if(focused&&!hexTransaction){hexTransaction=true;UiKit.beginEdit(getContext());postDelayed(this::ensureInputVisible,350);}
++            else if(!focused)finishInput();
++        });
+         hex.setOnEditorActionListener((v, action, event) -> {
+             if (validateInput()) {
+                 remember();
+@@ -274,6 +302,7 @@
+     EditText hexInput() { return hex; }
+ 
+     private void gradients() {
++        if(night)return;
+         TextView title = label("组件主题渐变", 12, UiKit.TEXT);
+         title.setTypeface(null, Typeface.BOLD);
+         title.setPadding(0, dp(7), 0, dp(4));
+@@ -289,7 +318,7 @@
+                 TextGradients.NAMES[i],
+                 TextGradients.COLORS[i],
+                 current == i,
+-                () -> { Scene.put(theme, "timeGradient", n); changed.run(); build(); }
++                () -> { finishInput(); Scene.put(theme, "timeGradient", n); changed.run(); build(); }
+             );
+             pill.setMinimumWidth(dp(56));
+             LayoutParams lp = new LayoutParams(-2, -2);
+@@ -314,7 +343,7 @@
+             int width = MeasureSpec.getSize(widthSpec);
+             float scale = Math.max(1f, getResources().getConfiguration().fontScale * UiKit.customFontScale * 0.85f);
+             int minimum = Math.round(68 * getResources().getDisplayMetrics().density * scale);
+-            columns = Math.max(2, Math.min(4, (width + gap) / (minimum + gap)));
++            columns = Math.max(1, Math.min(4, (width + gap) / (minimum + gap)));
+             cell = (width - gap * (columns - 1)) / columns;
+             int total = 0;
+             for (int start = 0; start < getChildCount(); start += columns) {
+--- before/app/src/main/java/com/foldstandby/clock/Scene.java
++++ after/app/src/main/java/com/foldstandby/clock/Scene.java
+@@ -16,10 +16,11 @@
+     static final int[] DEFAULT_COLORS={0xff000000,0xffe8ebf0,0xff8f9aa9,0xffb4dff7,0xffb4dff7,0xffe8ebf0,0xffffb16d,0xffb4dff7,0xff586576,0xffdbe2eb,0xff181e27};
+     String name="我的书桌",home;
+     JSONObject theme=new JSONObject(),nightTheme=new JSONObject();
++    Boolean ownNightColors;
+     final ArrayList<Page> pages=new ArrayList<>();
+     static final class Component {
+         String id=UUID.randomUUID().toString(),type="clock",style="digital";
+-        JSONObject theme=new JSONObject(),options=new JSONObject(),styles=new JSONObject();
++        JSONObject theme=new JSONObject(),nightTheme=new JSONObject(),options=new JSONObject(),styles=new JSONObject();
+         Component(){ensureStyles();}
+         private void ensureStyles(){for(String s:STYLES)if(styles.optJSONObject(s)==null)put(styles,s,new JSONObject());}
+         void setType(String value){
+@@ -31,18 +32,18 @@
+         }
+         JSONObject styleOptions(){JSONObject j=styles.optJSONObject(style);if(j==null){j=new JSONObject();put(styles,style,j);}return j;}
+         boolean bool(String key,boolean fallback){return options.optBoolean(key,fallback);}
+-        JSONObject json(){JSONObject j=new JSONObject();put(j,"id",id);put(j,"type",type);put(j,"style",ComponentStyles.selected(this));put(j,"theme",theme);put(j,"options",options);put(j,"styles",styles);return j;}
+-        static Component from(JSONObject j){Component c=new Component();if(j==null)return c;c.id=j.optString("id",c.id);c.type=valid(j.optString("type"),TYPES,"clock");String[] available=ComponentStyles.ids(c.type);c.style=valid(j.optString("style"),available,available[0]);c.theme=object(j,"theme");c.options=object(j,"options");c.styles=object(j,"styles");c.ensureStyles();return c;}
++        JSONObject json(){JSONObject j=new JSONObject();put(j,"id",id);put(j,"type",type);put(j,"style",ComponentStyles.selected(this));put(j,"theme",theme);put(j,"nightTheme",nightTheme);put(j,"options",options);put(j,"styles",styles);return j;}
++        static Component from(JSONObject j){Component c=new Component();if(j==null)return c;c.id=j.optString("id",c.id);c.type=valid(j.optString("type"),TYPES,"clock");String[] available=ComponentStyles.ids(c.type);c.style=valid(j.optString("style"),available,available[0]);c.theme=object(j,"theme");c.nightTheme=object(j,"nightTheme");c.options=object(j,"options");c.styles=object(j,"styles");c.ensureStyles();return c;}
+     }
+     static final class Page {
+         String id=UUID.randomUUID().toString(),name="时间";int layout;boolean autoName=true;
+-        JSONObject theme=new JSONObject();Component[] slots=new Component[4];
++        JSONObject theme=new JSONObject(),nightTheme=new JSONObject();Component[] slots=new Component[4];
+         Page(){for(int i=0;i<4;i++)slots[i]=new Component();}
+         int count(){return layout==0?1:layout==3?4:2;}
+         String contentName(){LinkedHashSet<String> names=new LinkedHashSet<>();for(int i=0;i<count();i++)names.add(slots[i].type.equals("clock")?"时间":typeName(slots[i].type));return String.join(" · ",names);}
+         void refreshName(){if(autoName)name=contentName();}
+-        JSONObject json(){JSONObject j=new JSONObject();put(j,"id",id);put(j,"name",name);put(j,"autoName",autoName);put(j,"layout",layout);put(j,"theme",theme);JSONArray a=new JSONArray();for(Component c:slots)a.put(c.json());put(j,"slots",a);return j;}
+-        static Page from(JSONObject j){Page p=new Page();if(j==null)return p;p.id=j.optString("id",p.id);p.name=j.optString("name","页面");p.layout=Math.max(0,Math.min(3,j.optInt("layout")));p.theme=object(j,"theme");JSONArray a=j.optJSONArray("slots");for(int i=0;a!=null&&i<Math.min(4,a.length());i++)p.slots[i]=Component.from(a.optJSONObject(i));p.autoName=j.optBoolean("autoName",p.name.equals(p.contentName())||p.name.equals("月历")||p.name.matches("页面( \\d+)?"));return p;}
++        JSONObject json(){JSONObject j=new JSONObject();put(j,"id",id);put(j,"name",name);put(j,"autoName",autoName);put(j,"layout",layout);put(j,"theme",theme);put(j,"nightTheme",nightTheme);JSONArray a=new JSONArray();for(Component c:slots)a.put(c.json());put(j,"slots",a);return j;}
++        static Page from(JSONObject j){Page p=new Page();if(j==null)return p;p.id=j.optString("id",p.id);p.name=j.optString("name","页面");p.layout=Math.max(0,Math.min(3,j.optInt("layout")));p.theme=object(j,"theme");p.nightTheme=object(j,"nightTheme");JSONArray a=j.optJSONArray("slots");for(int i=0;a!=null&&i<Math.min(4,a.length());i++)p.slots[i]=Component.from(a.optJSONObject(i));p.autoName=j.optBoolean("autoName",p.name.equals(p.contentName())||p.name.equals("月历")||p.name.matches("页面( \\d+)?"));return p;}
+         Page duplicate(){Page p=from(json());p.id=UUID.randomUUID().toString();if(!autoName)p.name=name+" 副本";for(Component c:p.slots)c.id=UUID.randomUUID().toString();return p;}
+     }
+     static void put(JSONObject j,String key,Object value){try{j.put(key,value);}catch(JSONException e){throw new IllegalArgumentException(e);}}
+@@ -59,21 +60,22 @@
+         if(role.equals("background"))return 0xff000000;
+         int n=0;for(int i=0;i<ROLES.length;i++)if(ROLES[i].equals(role)){n=i;break;}
+         int value=theme.optInt(role,DEFAULT_COLORS[n]);
+-        if(night&&ownNight)value=nightTheme.optInt(role,value);
+-        value=page.theme.optInt(role,value);
+-        if(component!=null)value=component.theme.optInt(role,value);
++        boolean independent=night&&(ownNightColors==null?ownNight:ownNightColors);
++        if(independent)value=nightTheme.optInt(role,value);
++        value=(independent?page.nightTheme:page.theme).optInt(role,value);
++        if(component!=null)value=(independent?component.nightTheme:component.theme).optInt(role,value);
+         return night&&role.equals("background")?(ownNight?nightTheme.optInt(role,0xff000000):0xff000000):value;
+     }
+-    String json(){JSONObject j=new JSONObject();put(j,"version",3);put(j,"name",name);put(j,"home",home);put(j,"theme",theme);put(j,"nightTheme",nightTheme);JSONArray a=new JSONArray();for(Page p:pages)a.put(p.json());put(j,"pages",a);return j.toString();}
++    String json(){JSONObject j=new JSONObject();put(j,"version",4);put(j,"name",name);put(j,"home",home);put(j,"theme",theme);put(j,"nightTheme",nightTheme);if(ownNightColors!=null)put(j,"ownNightColors",ownNightColors);JSONArray a=new JSONArray();for(Page p:pages)a.put(p.json());put(j,"pages",a);return j.toString();}
+     Scene copy(){return parse(json());}
+     void save(SharedPreferences p){p.edit().putString(KEY,json()).apply();}
+-    static Scene parse(String text){try{JSONObject j=new JSONObject(text);if(j.optInt("version")!=3)return null;Scene s=new Scene();s.name=j.optString("name","我的书桌");s.theme=object(j,"theme");s.nightTheme=object(j,"nightTheme");JSONArray a=j.getJSONArray("pages");for(int i=0;i<a.length();i++)s.pages.add(Page.from(a.getJSONObject(i)));if(s.pages.isEmpty())return null;s.home=j.optString("home",s.pages.get(0).id);s.home=s.pages.get(s.homeIndex()).id;return s;}catch(Exception e){return null;}}
+-    static Scene load(SharedPreferences p){Scene existing=parse(p.getString(KEY,""));if(existing!=null)return existing;
++    static Scene parse(String text){try{JSONObject j=new JSONObject(text);int version=j.optInt("version");if(version!=3&&version!=4)return null;Scene s=new Scene();s.name=j.optString("name","我的书桌");s.theme=object(j,"theme");s.nightTheme=object(j,"nightTheme");if(j.has("ownNightColors"))s.ownNightColors=j.optBoolean("ownNightColors");JSONArray a=j.getJSONArray("pages");for(int i=0;i<a.length();i++){Page page=Page.from(a.getJSONObject(i));if(version==3){page.nightTheme=object(page.json(),"theme");for(Component c:page.slots)c.nightTheme=object(c.json(),"theme");}s.pages.add(page);}if(s.pages.isEmpty())return null;s.home=j.optString("home",s.pages.get(0).id);s.home=s.pages.get(s.homeIndex()).id;return s;}catch(Exception e){return null;}}
++    static Scene load(SharedPreferences p){Scene existing=parse(p.getString(KEY,""));if(existing!=null){if(existing.ownNightColors==null)existing.ownNightColors=p.getBoolean("nightOwnColors",false);return existing;}
+         Scene s=new Scene();Dashboard d=new Dashboard(p);Page first=new Page();first.name="时间";first.layout=d.layout;
+         put(s.theme,"accent",d.color);put(s.theme,"time",d.color);put(s.theme,"hour",d.color);put(s.theme,"major",d.color);
+         for(int i=0;i<4;i++){Component c=first.slots[i];String old=d.slots[i];if(old.equals("digital")||old.equals("split")||old.equals("analog")){c.type="clock";c.style=old.equals("split")?"flip":old;}else c.type=valid(old,TYPES,"clock");
+             for(String key:new String[]{"date","seconds","h24"})put(c.options,key,p.getBoolean(key,!key.equals("seconds")));}
+         s.pages.add(first);Page calendar=new Page();calendar.name="日历";calendar.slots[0].type="date";s.pages.add(calendar);
+-        Page weather=new Page();weather.name="天气";weather.slots[0].type="weather";s.pages.add(weather);s.home=first.id;return s;
++        Page weather=new Page();weather.name="天气";weather.slots[0].type="weather";s.pages.add(weather);s.home=first.id;s.ownNightColors=p.getBoolean("nightOwnColors",false);return s;
+     }
+ }
+--- before/app/src/main/java/com/foldstandby/clock/UiKit.java
++++ after/app/src/main/java/com/foldstandby/clock/UiKit.java
+@@ -21,6 +21,9 @@
+ 
+ /** Shared visual design system and control primitives for the Studio Workspace. */
+ final class UiKit {
++    interface EditTransactions { void beginEdit(); void endEdit(); }
++    static void beginEdit(Context c) { if(c instanceof EditTransactions)((EditTransactions)c).beginEdit(); }
++    static void endEdit(Context c) { if(c instanceof EditTransactions)((EditTransactions)c).endEdit(); }
+     static float customFontScale = 1.0f;
+ 
+     static final int BG = 0xff090d12;
+@@ -183,9 +186,9 @@
+ 
+     static TextView compactButton(Context c, String label, int bg, int border, int textColor, Runnable click) {
+         TextView v = text(c, label, 11, textColor);
+-        v.setMinHeight(dp(c, 31));
++        v.setMinHeight(dp(c, 40));
+         v.setGravity(Gravity.CENTER);
+-        v.setMaxLines(1);
++        v.setMaxLines(2);
+         v.setPadding(dp(c, 8), dp(c, 4), dp(c, 8), dp(c, 4));
+         v.setBackground(surface(c, bg, 8, border, 1f));
+         v.setOnClickListener(x -> click.run());
+@@ -347,8 +350,8 @@
+                     change.accept(n);
+                 }
+             }
+-            public void onStartTrackingTouch(SeekBar b) {}
+-            public void onStopTrackingTouch(SeekBar b) {}
++            public void onStartTrackingTouch(SeekBar b) { beginEdit(c); }
++            public void onStopTrackingTouch(SeekBar b) { endEdit(c); }
+         });
+     }
+ 
+@@ -358,8 +361,7 @@
+         float fontScale = Math.max(1f, c.getResources().getConfiguration().fontScale * customFontScale * 0.85f);
+         int baseMin = longest <= 2 ? 62 : longest <= 4 ? 86 : 114;
+         int minimum = Math.round(baseMin * fontScale);
+-        int minCols = longest >= 6 ? 1 : 2;
+-        int cols = Math.min(labels.length, Math.max(minCols, Math.max(220, availableWidthDp) / minimum));
++        int cols = Math.min(labels.length, Math.max(1, Math.max(1, availableWidthDp) / minimum));
+         for (int start = 0; start < labels.length; start += cols) {
+             LinearLayout row = row(c);
+             for (int i = start; i < Math.min(start + cols, labels.length); i++) {
+@@ -375,7 +377,7 @@
+                 );
+                 b.setGravity(Gravity.CENTER);
+                 b.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp(11));
+-                b.setMinHeight(dp(c, 32));
++                b.setMinHeight(dp(c, 40));
+                 b.setPadding(dp(c, 5), dp(c, 4), dp(c, 5), dp(c, 4));
+                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1);
+                 int rightGap = (i + 1 < Math.min(start + cols, labels.length)) ? dp(c, 4) : 0;
+--- before/tests/AdaptiveLayoutTest.java
++++ after/tests/AdaptiveLayoutTest.java
+@@ -9,6 +9,15 @@
+         check(new AdaptiveLayout(876,320,1).shortWindow,"short height policy");
+         check(!new AdaptiveLayout(700,900,2).parallel,"large text needs wider inspector");
+         check(new AdaptiveLayout(1600,1000,1).left<=520,"preview pane has a width cap");
+-        System.out.println("PASS: 7 adaptive layout policies");
++        check(!new AdaptiveLayout(560,700,1).parallel,"narrow window keeps one pane");
++        check(new AdaptiveLayout(580,700,1).parallel,"usable minimum parallel panes");
++        check(new AdaptiveLayout(679,700,1).parallel==new AdaptiveLayout(680,700,1).parallel,"no unused rail threshold jump");
++        check(!new AdaptiveLayout(820,210,1).parallel,"extremely short windows prioritize content");
++        for(int height:new int[]{240,320,500,820})for(float font:new float[]{1,1.3f,2.08f}){
++            int preview=AdaptiveLayout.previewHeight(400,height,false,false,false,font);
++            check(preview>=76&&preview<=height,"preview fits available height");
++            check(AdaptiveLayout.previewHeight(400,height,false,false,true,font)<=110,"keyboard preview remains compact");
++        }
++        System.out.println("PASS: adaptive panes, threshold continuity, preview budgets and keyboard sizes");
+     }
+ }
+--- before/tests/EditHistoryTest.java
++++ after/tests/EditHistoryTest.java
+@@ -0,0 +1,24 @@
++package com.foldstandby.clock;
++public class EditHistoryTest {
++    private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
++    public static void main(String[] args){
++        EditHistory h=new EditHistory();
++        h.record("A","B");h.record("B","C");
++        check("B".equals(h.undo()),"undo last discrete edit");
++        check("A".equals(h.undo()),"multiple undo steps");
++        check("B".equals(h.redo()),"redo first edit");
++        h.begin();h.record("B","drag1");h.record("drag1","drag2");h.end();
++        check(!h.canRedo(),"new edit clears redo");
++        check("B".equals(h.undo()),"entire drag undoes in one step");
++        check("drag2".equals(h.redo()),"entire drag redoes in one step");
++        h.begin();h.record("drag2","temp");h.record("temp","drag2");h.end();
++        check("B".equals(h.undo()),"returning to initial value does not add history");
++        EditHistory restored=new EditHistory();restored.restore(h.undoStates(),h.redoStates());
++        check("drag2".equals(restored.redo()),"rotation preserves redo");
++        check("B".equals(restored.undo()),"rotation preserves undo");
++        h=new EditHistory();h.begin();h.record("A","B");check(h.canUndo(),"in-progress gesture can undo");check("A".equals(h.undo()),"undo finishes open gesture");
++        for(int i=0;i<200;i++)h.record("before"+i,"after"+i);
++        check(h.undoStates().size()<=80,"bounded history");
++        System.out.println("PASS: edit transactions, branching, rotation and bounded history");
++    }
++}
+--- before/app/build.gradle
++++ after/app/build.gradle
+@@ -3,7 +3,7 @@
+     namespace 'com.foldstandby.clock'
+     compileSdk 33
+     buildToolsVersion '33.0.2'
+-    defaultConfig { applicationId 'com.foldstandby.clock'; minSdk 30; targetSdk 33; versionCode 19; versionName '0.4.2' }
++    defaultConfig { applicationId 'com.foldstandby.clock'; minSdk 30; targetSdk 33; versionCode 20; versionName '0.5.0' }
+     signingConfigs {
+         existingInstallKey {
+             storeFile rootProject.file('.build-cache/.android/debug.keystore')
+--- before/README.md
++++ after/README.md
+@@ -1,4 +1,22 @@
+-# 折光时钟 0.4.2
++# 折光时钟 0.5.0
++
++
++## 0.5.0
++
++- 页面自定义按「页面 → 区域 → 组件」组织：预览顶栏集中布局、撤销和页面菜单；组件区统一为内容、外观、配色。点击预览区域与位置按钮同步选中框；样式选择仅改当前组件外观，更换组件使用独立选择器。
++- 添加页面先选择整屏、双栏、主次或四格的可视搭配，创建后直接点区域修改。布局变化保留隐藏区域，组件切换保留各类型内容与样式。
++- 浏览／排序采用页面轮播，调参聚焦当前页，预览可展开；按可用空间、有效字号和键盘调整。宽竖屏也可双栏，短窗口把区域与面板选择移入可滚动正文。折痕与弹窗采用实际安全区域，输入表单保持底部确认操作可见。
++- 有效修改继续自动保存。预览顶栏只常驻一枚撤销按钮，重做在页面菜单；支持会话内多步撤销，滑块／色盘的一次拖动合并为一步。删除页面、待办和场景快照可撤销。
++- 载入场景、恢复默认、覆盖／删除快照前保留最近五个恢复点，可跨重启从「我的场景 → 恢复点与找回配置」找回。命名场景是完整快照，包含待办内容与完成状态；同名时可覆盖或保存副本。天气地点、权限、系统闹钟与正在运行的专注计时等全局或外部状态不随场景恢复。
++- 页面、组件的日间与夜间配色分别保存；独立夜间配色启用状态随场景保存。预览切换不会启用配置。旧 v3 场景自动迁移并保留原有日夜显示；只展示当前组件有效颜色，夜间隐藏不生效的渐变，提示下级独立配色并可恢复跟随。
++- 全屏预览接续当前页面与日夜查看状态，重复打开也重新读取当前配置。
++- 正式包：`dist/折光时钟-0.5.0-正式版.apk`。改版前源码备份：`dist/uiux-before-0.5.0.zip`。尺寸矩阵与真机验证见 `dist/VALIDATION-0.5.0.md`。
++
++新增工作台验证（隔离配置，实际打开应用与键盘并旋转）：
++
++```
++adb shell am instrument -w -e suite studio com.foldstandby.clock.test/com.foldstandby.clock.DeskChecks
++```
+ 
+ ## 0.4.2
+ 
