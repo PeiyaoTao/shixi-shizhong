@@ -7,8 +7,8 @@ import android.graphics.*;
 import android.media.*;
 import android.media.session.*;
 import android.os.*;
+import android.text.StaticLayout;
 import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -56,6 +56,7 @@ public final class ClockFace extends View {
     private MusicSpectrum musicSpectrum;
     private boolean spectrumUsed;
     private final Rect visibleMusicRect = new Rect();
+    private final MusicLayout[] musicLayouts = {new MusicLayout(), new MusicLayout(), new MusicLayout(), new MusicLayout()};
     private String lyricSource;
     private LrcLyrics lyrics;
     private String playerLyricSource;
@@ -64,6 +65,7 @@ public final class ClockFace extends View {
     private final SharedPreferences.OnSharedPreferenceChangeListener lyricSettingChanged = (preferences, key) -> {
         if (MusicLyrics.ONLINE.equals(key)) lyricsChanged.onSharedPreferenceChanged(preferences, key);
     };
+    private final Runnable liveLyricsChanged = this::invalidate;
     private long nextLyricAt, scheduledLyricAt = Long.MAX_VALUE;
     private final Runnable lyricTick = () -> { scheduledLyricAt = Long.MAX_VALUE; invalidate(); };
     private final SharedPreferences prefs;
@@ -210,11 +212,13 @@ public final class ClockFace extends View {
         MusicLyrics.library(getContext()).registerOnSharedPreferenceChangeListener(lyricsChanged);
         OnlineLyrics.cache(getContext()).registerOnSharedPreferenceChangeListener(lyricsChanged);
         prefs.registerOnSharedPreferenceChangeListener(lyricSettingChanged);
+        MusicLyrics.observeLive(getContext(), liveLyricsChanged);
     }
     protected void onDetachedFromWindow(){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}
         MusicLyrics.library(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
         OnlineLyrics.cache(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
         prefs.unregisterOnSharedPreferenceChangeListener(lyricSettingChanged);
+        MusicLyrics.forgetLive(getContext(), liveLyricsChanged);
         super.onDetachedFromWindow();
     }
     protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
@@ -343,12 +347,7 @@ public final class ClockFace extends View {
             canvas.translate(r.centerX()+(shiftX-250f)*scale,r.centerY()+(shiftY-200f)*scale);
             canvas.scale(scale,scale);
             if(!component.type.equals("clock")){float cs=component.options.optInt("scale",100)/100f;if(Math.abs(cs-1f)>.001f){canvas.translate(250,200);canvas.scale(cs,cs);canvas.translate(-250,-200);}}
-            if(!dark&&component.bool("card",!prefs.getBoolean("simple",true))){
-                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);
-                themeColor(color("plate"),56,cardRect.left,cardRect.top,cardRect.right,cardRect.bottom);
-                canvas.drawRoundRect(cardRect,24,24,p);
-                p.setShader(null);p.setStyle(Paint.Style.FILL);
-            }
+            if (!config.slots[i].equals("music")) componentBorder(canvas, cardRect, 24, 1.5f);
             if(component.type.equals("clock"))clock(canvas,component);else render(canvas,config.slots[i]);canvas.restore();
         }
         if(slotTap!=null&&editorSlot>=0&&editorSlot<config.count()){
@@ -1260,6 +1259,16 @@ public final class ClockFace extends View {
             }
         }
     }
+    private void componentBorder(Canvas c, RectF frame, float radius, float stroke) {
+        if (dark || !component.bool("card", !prefs.getBoolean("simple", true))) return;
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(stroke);
+        themeColor(color("plate"), 56, frame.left, frame.top, frame.right, frame.bottom);
+        c.drawRoundRect(frame, radius, radius, p);
+        p.setShader(null);
+        p.setStyle(Paint.Style.FILL);
+    }
+
     private void music(Canvas c) {
         MediaController controller = demo || !DeskData.musicAllowed ? null : DeskData.media;
         MediaMetadata meta = controller == null ? null : controller.getMetadata();
@@ -1269,7 +1278,7 @@ public final class ClockFace extends View {
         long actions = demo ? ~0L : state == null ? 0 : state.getActions();
         Bitmap art = meta == null ? null : meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
         if (art == null && meta != null) art = meta.getBitmap(MediaMetadata.METADATA_KEY_ART);
-        String title = demo ? "夜行 · Nightfall" : meta != null ? MusicLyrics.title(meta)
+        String title = demo ? "夜行 · Nightfall" : meta != null ? MusicLyrics.title(controller, meta)
                 : DeskData.musicAllowed ? "暂无播放" : "音乐未授权";
         String artist = demo ? "音乐组件预览" : meta != null ? meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
                 : DeskData.musicAllowed ? "在播放器中选择音乐" : "在设置中开启音乐访问";
@@ -1283,57 +1292,106 @@ public final class ClockFace extends View {
         if (tracking) pos += (long) (Math.max(0, SystemClock.elapsedRealtime() - update) * speed);
         if (duration > 0) pos = Math.min(pos, duration);
 
-        String lyric = "", nextLyric = "";
-        if (component.bool(MusicLyrics.SHOW, false)) {
+        MusicLayout layout = musicLayouts[drawingSlot];
+        layout.compact = false;
+        String lookupStatus = null;
+        boolean showLyrics = component.bool(MusicLyrics.SHOW, false);
+        LrcLyrics activeLyrics = null;
+        int currentLyric = -1;
+        if (showLyrics) {
             String trackKey = demo ? null : MusicLyrics.key(controller, meta);
-            LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : position >= 0 && trackKey != null
-                    ? musicLyrics(controller, meta, trackKey, tracking) : null;
-            if (timeline != null) {
-                int offset = MusicLyrics.offset(getContext(), trackKey);
-                long lyricPosition = pos + offset;
-                int index = timeline.indexAt(lyricPosition);
-                lyric = timeline.lineAt(index);
-                float density = getResources().getDisplayMetrics().density;
-                RectF bounds = cells[drawingSlot];
-                if (!lyric.isEmpty() && bounds.width() >= 480 * density && bounds.height() >= 290 * density) {
-                    nextLyric = timeline.lineAt(index + 1);
-                }
-                long next = timeline.nextTime(index);
+            MusicLyrics.Track onlineTrack = OnlineLyrics.enabled(prefs)
+                    ? MusicLyrics.track(controller, meta, trackKey) : null;
+            LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : trackKey != null
+                    ? musicLyrics(controller, meta, trackKey, onlineTrack, position) : null;
+            if (timeline != null && timeline.hasLines()) {
+                boolean live = timeline.isLive();
+                int offset = live ? 0 : MusicLyrics.offset(getContext(), trackKey);
+                int index = live ? timeline.lineCount() - 1 : timeline.indexAt(pos + offset);
+                long next = live ? Long.MAX_VALUE : timeline.nextTime(index);
                 if (next != Long.MAX_VALUE) next -= offset;
                 if (tracking && next != Long.MAX_VALUE && (duration <= 0 || next <= duration)) {
                     long delay = Math.max(16L, (long) Math.ceil((next - pos) / (double) speed));
                     if (delay <= 60000L) nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
                 }
+                if (!timeline.lineAt(index).isEmpty()) {
+                    activeLyrics = timeline;
+                    currentLyric = index;
+                }
+            } else if (onlineTrack != null) {
+                if (position < 0) lookupStatus = "等待播放器提供进度";
+                else if (controller != null && MusicLyrics.hasRecentLiveSource(controller.getPackageName()) && pos < 3500L) {
+                    if (tracking) {
+                        long delay = Math.max(16L, (long) Math.ceil((3500L - pos) / (double) speed));
+                        nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
+                    }
+                } else {
+                    boolean start = tracking && (externalTick || editorSlot == drawingSlot) && testTime < 0
+                            && motionActive && isAttachedToWindow() && getWindowVisibility() == VISIBLE
+                            && isShown() && getGlobalVisibleRect(visibleMusicRect);
+                    lookupStatus = OnlineLyrics.automatic(getContext(), onlineTrack, start, this::invalidate).label;
+                }
             }
         }
-        musicVisual(c, art, title, artist, available, playing, pos, duration, lyric, nextLyric);
-        themedLine(c,54,202,446,202,(muted&0xffffff)|0x60000000,3,96);
-        if(duration>0){float end=54+392*pos/(float)duration;themeColor(ink,255,54,202,446,202);strokeLine(c,54,202,end,202,3);c.drawCircle(end,202,4,p);p.setShader(null);}
-        txt(c,available?MediaControls.time(pos):"—:—",82,237,16,muted,regular,90);txt(c,duration>0?MediaControls.time(duration):"—:—",418,237,16,muted,regular,90);
-        for(int button=0;button<3;button++)musicButton(c,button,playing,available&&MediaControls.enabled(actions,playing,button));
+        if (showLyrics && available) {
+            float density = getResources().getDisplayMetrics().density;
+            RectF bounds = cells[drawingSlot];
+            int lyricLines = activeLyrics == null ? 0 : activeLyrics.isLive() ? 2 : activeLyrics.lineCount();
+            layout.arrange(bounds.width(), bounds.height(), density, component.options.optInt("scale", 100) / 100f,
+                    MusicLyrics.position(component), MusicLyrics.fontSize(component), lyricLines);
+            float invScale = 1f / componentScale(drawingSlot);
+            c.save();
+            c.translate(250f, 200f);
+            c.scale(invScale, invScale);
+            componentBorder(c, layout.frame, 14f * density, density);
+            c.save();
+            c.translate(layout.playerLeft, layout.playerTop);
+            c.scale(layout.playerScale, layout.playerScale);
+            drawMusicPlayer(c, art, title, artist, available, playing, pos, duration, actions, true, lookupStatus);
+            c.restore();
+            if (activeLyrics != null) drawLyrics(c, layout, activeLyrics, currentLyric);
+            c.restore();
+            return;
+        }
+        componentBorder(c, cardRect, 24, 1.5f);
+        drawMusicPlayer(c, art, title, artist, available, playing, pos, duration, actions, false, lookupStatus);
     }
 
-    private LrcLyrics musicLyrics(MediaController controller, MediaMetadata meta, String key, boolean tracking) {
-        Context context = getContext();
-        MusicLyrics.Track track = prefs.getBoolean(MusicLyrics.ONLINE, false)
-                ? MusicLyrics.track(meta, key) : null;
-        String source = track == null ? null : OnlineLyrics.selected(context, track);
-        if (source == null) source = MusicLyrics.library(context).getString(key, null);
-        if (source == null) {
-            String direct = MusicLyrics.playerLyrics(controller, meta);
-            if (!Objects.equals(playerLyricSource, direct)) {
-                playerLyricSource = direct;
-                playerTimeline = LrcLyrics.parse(direct);
-            }
-            if (playerTimeline != null && playerTimeline.hasLines()) return playerTimeline;
+    private void drawMusicPlayer(Canvas c, Bitmap art, String title, String artist, boolean available,
+                                 boolean playing, long pos, long duration, long actions, boolean compact, String lookupStatus) {
+        musicVisual(c, art, title, artist, available, playing, pos, duration, lookupStatus);
+        float progressY = compact ? 196 : 202;
+        float timeY = compact ? 219 : 237;
+        themedLine(c,54,progressY,446,progressY,(muted&0xffffff)|0x60000000,3,96);
+        if(duration>0){float end=54+392*pos/(float)duration;themeColor(ink,255,54,progressY,446,progressY);strokeLine(c,54,progressY,end,progressY,3);c.drawCircle(end,progressY,4,p);p.setShader(null);}
+        txt(c,available?MediaControls.time(pos):"—:—",82,timeY,16,muted,regular,90);txt(c,duration>0?MediaControls.time(duration):"—:—",418,timeY,16,muted,regular,90);
+        for (int button = 0; button < 3; button++) {
+            musicButton(c, button, playing, available && MediaControls.enabled(actions, playing, button), compact);
         }
-        if (source == null && track != null) {
-            source = OnlineLyrics.cache(context).getString(track.signature, null);
-            if (source == null && tracking && (externalTick || editorSlot == drawingSlot) && testTime < 0
-                    && motionActive && isAttachedToWindow() && getWindowVisibility() == VISIBLE
-                    && isShown() && getGlobalVisibleRect(visibleMusicRect)) {
-                OnlineLyrics.automatic(context, track, this::invalidate);
+    }
+
+    private LrcLyrics musicLyrics(MediaController controller, MediaMetadata meta, String key,
+                                  MusicLyrics.Track track, long position) {
+        Context context = getContext();
+        String source = null;
+        if (position >= 0) {
+            source = track == null ? null : OnlineLyrics.selected(context, track);
+            if (source == null) source = MusicLyrics.library(context).getString(key, null);
+            if (source == null) {
+                String direct = MusicLyrics.playerLyrics(controller, meta);
+                if (!Objects.equals(playerLyricSource, direct)) {
+                    playerLyricSource = direct;
+                    playerTimeline = LrcLyrics.parse(direct);
+                }
+                if (playerTimeline != null && playerTimeline.hasLines()) return playerTimeline;
             }
+        }
+        if (source == null) {
+            LrcLyrics live = MusicLyrics.liveLyrics(controller, meta);
+            if (live != null && live.hasLines()) return live;
+        }
+        if (source == null && position >= 0 && track != null) {
+            source = OnlineLyrics.cache(context).getString(track.signature, null);
         }
         if (!Objects.equals(lyricSource, source)) {
             lyricSource = source;
@@ -1355,75 +1413,98 @@ public final class ClockFace extends View {
     }
 
     private void musicVisual(Canvas c, Bitmap art, String title, String artist, boolean available,
-                             boolean playing, long position, long duration, String lyric, String nextLyric) {
+                             boolean playing, long position, long duration, String lookupStatus) {
         String style = ComponentStyles.selected(component);
-        String status = available ? (playing ? "正在播放" : "已暂停") : "音乐";
+        String status = lookupStatus != null ? lookupStatus : available ? (playing ? "正在播放" : "已暂停") : "音乐";
         boolean liveMotion = effectsEnabled() && getWindowVisibility() == VISIBLE && isShown()
                 && getGlobalVisibleRect(visibleMusicRect);
         float progress = duration > 0 ? position / (float) duration : Float.NaN;
         if (musicArtwork == null) musicArtwork = new MusicArtwork();
         if (style.equals("cover")) {
             coverArt(c,art,42,42,144,144,false);
-            musicMetadata(c, title, artist, status, available, true, lyric, nextLyric);
+            musicMetadata(c, title, artist, status, available, true);
         } else if (style.equals("record")) {
             musicArtwork.record(c, ComponentStyles.vectorArtwork(component), dark, ink, gradient, art, position, progress, effectsEnabled());
-            musicMetadata(c, title, artist, status, available, false, lyric, nextLyric);
+            musicMetadata(c, title, artist, status, available, false);
             if (available && playing && liveMotion) animateEffect(33);
         } else if (style.equals("music_type")) {
             primaryRect(c,54,57,59,166,2);
             textLeft(c,shorten(title,43),75,121,59,available?ink:muted,Typeface.SERIF,365);
-            if (lyric.isEmpty()) textLeft(c,shorten(artist,44),78,164,23,muted,regular,365);
-            else {
-                musicLyric(c, lyric, 78, 161, 23, 365, true, true);
-                musicLyric(c, nextLyric, 78, 184, 17, 365, false, true);
-            }
+            textLeft(c,shorten(lookupStatus == null ? artist : lookupStatus,44),78,164,23,muted,regular,365);
         } else if (style.equals("spectrum")) {
-            txt(c, shorten(title, 50), 250, nextLyric.isEmpty() ? 45 : 34, 29, available ? ink : muted, bold, 430);
+            txt(c, shorten(title, 50), 250, 45, 29, available ? ink : muted, bold, 430);
             boolean enabled = !demo && MusicSpectrum.enabled(getContext(), prefs);
             boolean active = available && playing && liveMotion && enabled;
             if (musicSpectrum == null) musicSpectrum = new MusicSpectrum();
             spectrumUsed = !demo;
             float[] levels = demo ? MusicSpectrum.demoLevels() : musicSpectrum.levels(active);
             String detail = demo ? "示例频谱" : available && playing && liveMotion && !enabled ? "播放中 · 频谱已关闭" : artist;
-            if (lyric.isEmpty()) {
-                String secondary = component.bool(MusicLyrics.SHOW, false) && artist != null && !artist.isEmpty()
-                        ? artist : detail;
-                txt(c, shorten(secondary, 60), 250, 72, 17, muted, regular, 430);
-            }
-            else {
-                musicLyric(c, lyric, 250, nextLyric.isEmpty() ? 72 : 57, 18, 430, true, false);
-                musicLyric(c, nextLyric, 250, 78, 15, 430, false, false);
-            }
+            String secondary = component.bool(MusicLyrics.SHOW, false) && artist != null && !artist.isEmpty()
+                    ? artist : detail;
+            txt(c, shorten(lookupStatus == null ? secondary : lookupStatus, 60), 250, 72, 17, muted, regular, 430);
             musicArtwork.spectrum(c, levels, ink, gradient, dark);
             if ((active && musicSpectrum.capturing()) || (liveMotion && musicSpectrum.moving())) animateEffect(48);
         } else {
             musicArtwork.cassette(c, ComponentStyles.vectorArtwork(component), dark, ink, gradient,
                     available ? title : null, position, duration, progress, effectsEnabled());
-            musicMetadata(c, title, artist, status, available, false, lyric, nextLyric);
+            musicMetadata(c, title, artist, status, available, false);
             if (available && playing && liveMotion) animateEffect(33);
         }
     }
 
     private void musicMetadata(Canvas c, String title, String artist, String status, boolean available,
-                               boolean cover, String lyric, String nextLyric) {
+                               boolean cover) {
         float x = cover ? 320 : 365, width = cover ? 290 : 205;
         txt(c, shorten(title, 40), x, cover ? 80 : 83, cover ? 26 : 28, available ? ink : muted, bold, width);
-        if (lyric.isEmpty()) txt(c, shorten(artist, 44), x, cover ? 116 : 119, 18, muted, regular, width);
-        else musicLyric(c, lyric, x, cover ? 116 : 119, 20, width, true, false);
-        if (nextLyric.isEmpty()) txt(c, status, x, cover ? 150 : 149, 14, muted, regular, width);
-        else musicLyric(c, nextLyric, x, cover ? 150 : 149, 16, width, false, false);
+        txt(c, shorten(artist, 44), x, cover ? 116 : 119, 18, muted, regular, width);
+        txt(c, status, x, cover ? 150 : 149, 14, muted, regular, width);
     }
 
-    private void musicLyric(Canvas c, String line, float x, float y, float size, float width,
-                            boolean current, boolean leftAlign) {
-        if (line.isEmpty()) return;
-        Typeface face = current ? bold : regular;
-        int color = current ? ink : muted;
-        p.setTypeface(face);
-        p.setTextSize(size);
-        String fitted = TextUtils.ellipsize(line, p, width, TextUtils.TruncateAt.END).toString();
-        if (leftAlign) textLeft(c, fitted, x, y, size, color, face, width);
-        else txt(c, fitted, x, y, size, color, face, width);
+    private void drawLyrics(Canvas c, MusicLayout layout, LrcLyrics timeline, int index) {
+        RectF area = layout.lyrics;
+        int width = Math.max(1, (int) area.width());
+        float size = layout.lyricSize;
+        StaticLayout current = layout.current.layout(timeline.lineAt(index), size, width, bold, layout.lyricAlignment(), 2);
+        float space = Math.max(0f, area.height() - current.getHeight());
+        float gap = size * .28f;
+        MusicLayout.ContextLines before = layout.before, after = layout.after;
+        before.prepare(timeline, index, -1, space, size * .63f, gap, width, regular, layout.lyricAlignment());
+        after.prepare(timeline, index, 1, space, size * .63f, gap, width, regular, layout.lyricAlignment());
+        while (before.height + after.height > space) {
+            (before.height > after.height ? before : after).removeFarthest(gap);
+        }
+        float height = before.height + current.getHeight() + after.height;
+        float y = layout.sideBySide ? area.centerY() - height / 2f : layout.lyricsFirst ? area.bottom - height : area.top;
+        c.save();
+        c.clipRect(area);
+        for (int i = before.count - 1; i >= 0; i--) {
+            StaticLayout text = before.rows[i];
+            drawLyricLine(c, text, area.left, y, false);
+            y += text.getHeight() + gap;
+        }
+        drawLyricLine(c, current, area.left, y, true);
+        y += current.getHeight() + gap;
+        for (int i = 0; i < after.count; i++) {
+            StaticLayout text = after.rows[i];
+            drawLyricLine(c, text, area.left, y, false);
+            y += text.getHeight() + gap;
+        }
+        c.restore();
+    }
+
+    private void drawLyricLine(Canvas c, StaticLayout text, float x, float y, boolean current) {
+        c.save();
+        c.translate(x, y);
+        TextPaint paint = text.getPaint();
+        paint.setColor(current ? ink : muted);
+        if (current) {
+            themeShader(0, 0, text.getWidth(), text.getHeight());
+            paint.setShader(p.getShader());
+        }
+        text.draw(c);
+        paint.setShader(null);
+        p.setShader(null);
+        c.restore();
     }
 
     private void resetMusicSpectrum() {
@@ -1439,9 +1520,10 @@ public final class ClockFace extends View {
             p.setColor(ink);c.drawOval(cx-24*s,cy+10*s,cx-9*s,cy+21*s,p);c.drawOval(cx+4*s,cy+2*s,cx+19*s,cy+13*s,p);p.setShader(null);
         }
     }
-    private void musicButton(Canvas c, int button, boolean playing, boolean enabled) {
+    private void musicButton(Canvas c, int button, boolean playing, boolean enabled, boolean compact) {
         boolean primary = button == 1;
-        float x = MediaControls.X[button], y = MediaControls.Y, radius = primary ? 43 : 31;
+        float x = MediaControls.X[button], y = compact ? MediaControls.COMPACT_Y : MediaControls.Y;
+        float radius = primary ? (compact ? 32 : 43) : (compact ? 23 : 31);
         int foreground = enabled ? ink : (muted & 0xffffff) | 0x68000000;
         boolean pressed = pressedMusicSlot == drawingSlot && pressedMusicButton == button;
         float feedback = feedbackSlot == drawingSlot && feedbackButton == button
@@ -1460,6 +1542,7 @@ public final class ClockFace extends View {
             c.drawCircle(x, y, radius + 5 + (1 - feedback) * 4, p);
             if (!pressed) animateEffect(16);
         }
+        if (compact) c.scale(.84f, .84f, x, y);
         p.setStyle(Paint.Style.FILL);
         p.setColor(foreground);
         themeShader(x - 14, y - 14, x + 14, y + 14);
@@ -1484,7 +1567,16 @@ public final class ClockFace extends View {
         p.setShader(null);
         c.restore();
     }
-    private int musicHit(int slot,float x,float y){RectF r=cells[slot];float scale=Math.min(r.width()/540f,r.height()/432f);float cs=page.slots[slot].type.equals("clock")?1f:page.slots[slot].options.optInt("scale",100)/100f;return MediaControls.hit(250+((x-r.centerX())/scale-sceneShiftX)/cs,200+((y-r.centerY())/scale-sceneShiftY)/cs);}
+    private int musicHit(int slot, float x, float y) {
+        RectF cell = cells[slot];
+        float baseScale = Math.min(cell.width() / 540f, cell.height() / 432f);
+        MusicLayout layout = musicLayouts[slot];
+        if (layout.compact) {
+            return layout.hit(x - cell.centerX() - sceneShiftX * baseScale,
+                    y - cell.centerY() - sceneShiftY * baseScale, getResources().getDisplayMetrics().density);
+        }
+        return MediaControls.hit(componentX(slot, x), componentY(slot, y));
+    }
     private boolean musicAction(int button){MediaController controller=DeskData.media;if(demo||!DeskData.musicAllowed||controller==null)return false;PlaybackState state=controller.getPlaybackState();boolean playing=state!=null&&state.getState()==PlaybackState.STATE_PLAYING;if(state==null||!MediaControls.enabled(state.getActions(),playing,button))return false;MediaController.TransportControls controls=controller.getTransportControls();try{if(button==0)controls.skipToPrevious();else if(button==2)controls.skipToNext();else if(playing)controls.pause();else controls.play();return true;}catch(SecurityException error){return false;}}
     private String shorten(String s,int n){if(s==null)return "";return s.length()>n?s.substring(0,n-1)+"…":s;}
     private int todoPending(JSONArray tasks,int[] ordered){

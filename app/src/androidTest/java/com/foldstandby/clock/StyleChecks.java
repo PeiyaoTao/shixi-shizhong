@@ -24,7 +24,8 @@ final class StyleChecks {
     private File directory;
     private int assertions,renders;
     private StyleChecks(Instrumentation runner){this.runner=runner;}
-    static Bundle run(Instrumentation runner){return new StyleChecks(runner).run();}
+    static Bundle run(Instrumentation runner){return new StyleChecks(runner).run(false);}
+    static Bundle runMusic(Instrumentation runner){return new StyleChecks(runner).run(true);}
     static Bundle runGradients(Instrumentation runner){
         StyleChecks checks=new StyleChecks(runner);
         checks.context=runner.getTargetContext();
@@ -45,15 +46,20 @@ final class StyleChecks {
         final Throwable[] error={null};runner.runOnMainSync(()->{try{action.run();}catch(Throwable e){error[0]=e;}});
         if(error[0]!=null)throw new AssertionError(error[0]);
     }
-    private Bundle run(){
-        Bundle result=new Bundle();context=runner.getTargetContext();prefs=context.getSharedPreferences("style_checks",0);
+    private Bundle run(boolean musicOnly){
+        Bundle result=new Bundle();context=runner.getTargetContext();prefs=context.getSharedPreferences(musicOnly ? "music_style_checks" : "style_checks",0);
         directory=new File(context.getFilesDir(),"qa-0.3.6");directory.mkdirs();
         try{
-            sync(()->{try{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",true).commit();modelChecks();renderChecks();musicPresentationChecks();animationChecks();interactionChecks();galleryChecks();}catch(Exception e){throw new AssertionError(e);}});
+            sync(()->{try{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",true).commit();
+                if (musicOnly) musicPresentationChecks();
+                else {modelChecks();renderChecks();musicPresentationChecks();animationChecks();interactionChecks();galleryChecks();}
+            }catch(Exception e){throw new AssertionError(e);}});
             mediaChecks();
             int styles=0;
             for(String type:Scene.TYPES)if(!type.equals("clock"))styles+=count(type);
-            result.putBoolean("passed",true);result.putString("result","PASS: "+assertions+" style checks, "+renders+" offscreen renders, "+styles+" non-clock styles");
+            result.putBoolean("passed",true);result.putString("result",musicOnly
+                    ? "PASS: " + assertions + " music layout and touch checks, " + renders + " offscreen renders"
+                    : "PASS: "+assertions+" style checks, "+renders+" offscreen renders, "+styles+" non-clock styles");
         }catch(Throwable error){result.putBoolean("passed",false);result.putString("result",android.util.Log.getStackTraceString(error));}
         finally{prefs.edit().clear().commit();}
         return result;
@@ -190,6 +196,9 @@ final class StyleChecks {
         float scale=Math.min(cw/540f,ch/432f);long minute=System.currentTimeMillis()/60000;
         float sx=shifted?(minute%7-3)*6:0,sy=shifted?((minute/7)%5-2)*7:0;
         float actualX=pad+cw/2+((x-250)*size/100f+sx)*scale,actualY=pad+ch/2+((y-200)*size/100f+sy)*scale;
+        tapPixels(f, actualX, actualY);
+    }
+    private void tapPixels(ClockFace f, float actualX, float actualY) {
         long time=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(time,time,0,actualX,actualY,0),up=MotionEvent.obtain(time,time+80,1,actualX,actualY,0);
         f.onTouchEvent(down);f.onTouchEvent(up);down.recycle();up.recycle();
     }
@@ -328,10 +337,52 @@ final class StyleChecks {
                     check(commands.get(button)==style+1,"music style button reaches session "+style+" / "+button);
                 }
             }
+            SharedPreferences lyrics = MusicLyrics.library(context);
+            String key = MusicLyrics.key(DeskData.media, DeskData.media.getMetadata());
+            String originalLyrics = lyrics.getString(key, null);
+            float density = context.getResources().getDisplayMetrics().density;
+            int width = Math.round(840 * density), height = Math.round(360 * density);
+            Scene musicScene = model("music", 0);
+            try {
+                lyrics.edit().putString(key, "[00:01]歌词校验\n[02:00]第二行").commit();
+                sync(() -> {
+                    Scene.put(musicScene.pages.get(0).slots[0].options, MusicLyrics.SHOW, true);
+                    Scene.put(musicScene.pages.get(0).slots[0].options, "scale", 125);
+                    f[0] = face(musicScene, false, false);
+                    Bitmap bitmap = render(f[0], width, height);
+                    bitmap.recycle();
+                });
+                ClockLayout.Area slot = ClockLayout.arrange(width, height, null, 0).get(0)[0];
+                MusicLayout layout = new MusicLayout();
+                layout.arrange(slot.width(), slot.height(), density, 1.25f, MusicLyrics.Position.AUTO, 100, 2);
+                float x = width / 2f + layout.playerLeft + (MediaControls.X[1] + 37) * layout.playerScale;
+                float y = height / 2f + layout.playerTop + MediaControls.COMPACT_Y * layout.playerScale;
+                int count = commands.get(1);
+                sync(() -> tapPixels(f[0], x, y));
+                long deadline = SystemClock.uptimeMillis() + 1000;
+                while (commands.get(1) == count && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(10);
+                check(commands.get(1) == count + 1, "compact playback button keeps a larger touch target");
+                sync(() -> tapPixels(f[0], width / 2f + layout.lyrics.centerX(), height / 2f));
+                runner.waitForIdleSync();
+                check(commands.get(1) == count + 1, "lyrics area does not trigger playback controls");
+                lyrics.edit().putString(key, "[02:00]歌词还未开始").commit();
+                sync(() -> {
+                    session[0].setPlaybackState(new PlaybackState.Builder()
+                            .setState(PlaybackState.STATE_PAUSED, 74000, 0).build());
+                    Bitmap intro = render(f[0], width, height);
+                    lyrics.edit().remove(key).commit();
+                    Bitmap playerOnly = render(f[0], width, height);
+                    check(intro.sameAs(playerOnly), "the player uses its full area before the first lyric");
+                    intro.recycle();
+                    playerOnly.recycle();
+                });
+            } finally {
+                lyrics.edit().putString(key, originalLyrics).commit();
+            }
         }finally{sync(()->{if(session[0]!=null)session[0].release();DeskData.media=previous;DeskData.musicAllowed=allowed;});}
     }
 
-    private void musicPresentationChecks() {
+    private void musicPresentationChecks() throws IOException {
         for (int style = 0; style < count("music"); style++) {
             Scene scene = model("music", style);
             Scene.Component component = scene.pages.get(0).slots[0];
@@ -364,6 +415,115 @@ final class StyleChecks {
         }
         solid.recycle();
         gradient.recycle();
+
+        float density = context.getResources().getDisplayMetrics().density;
+        int[][] sizes = {{840, 360}, {560, 430}, {360, 540}};
+        String[] names = {"lyrics-wide", "lyrics-stacked", "lyrics-narrow"};
+        Scene preview = model("music", 1);
+        Scene.Component lyricComponent = preview.pages.get(0).slots[0];
+        Scene.put(lyricComponent.options, MusicLyrics.SHOW, true);
+        Scene.put(lyricComponent.theme, "accent", 0xffb4f0bf);
+        int contextColor = 0xff8692a2;
+        Scene.put(lyricComponent.theme, "secondary", contextColor);
+        check(MusicLyrics.position(lyricComponent) == MusicLyrics.Position.AUTO && MusicLyrics.fontSize(lyricComponent) == 100,
+                "old music components use automatic lyric placement and the original font size");
+        ClockFace lyricsFace = face(preview, true, false);
+        lyricsFace.testTime = 6600;
+        for (int i = 0; i < sizes.length; i++) {
+            int width = Math.round(sizes[i][0] * density), height = Math.round(sizes[i][1] * density);
+            ClockLayout.Area cell = ClockLayout.arrange(width, height, null, 0).get(0)[0];
+            MusicLayout layout = new MusicLayout();
+            layout.arrange(cell.width(), cell.height(), density, 1f, MusicLyrics.Position.AUTO, 100, LrcLyrics.PREVIEW.lineCount());
+            check(layout.sideBySide == (i == 0), "lyrics switch layout with the allocated width");
+            float share = layout.sideBySide ? layout.lyrics.width() / cell.width() : layout.lyrics.height() / cell.height();
+            check(share >= .32f && share <= .49f, "the player has a larger share while leaving a dedicated lyrics area");
+            MusicLayout fewLines = new MusicLayout();
+            fewLines.arrange(cell.width(), cell.height(), density, 1f, MusicLyrics.Position.AUTO, 100, 2);
+            check(fewLines.playerScale >= layout.playerScale && fewLines.lyrics.height() * fewLines.lyrics.width()
+                    < layout.lyrics.height() * layout.lyrics.width(), "short lyrics free space for the player");
+            MusicLayout playerOnly = new MusicLayout();
+            playerOnly.arrange(cell.width(), cell.height(), density, 1f, MusicLyrics.Position.AUTO, 100, 0);
+            check(playerOnly.lyrics.isEmpty() && playerOnly.playerScale >= fewLines.playerScale,
+                    "the full player reclaims the empty lyrics pane");
+            Bitmap image = render(lyricsFace, width, height);
+            save(image, names[i] + ".png");
+            check(lyricPixels(image, layout.lyrics) > 30, "current lyric renders inside its own panel");
+            if (i < 2) {
+                int separation = Math.round(3 * density);
+                int normalLines = lyricBands(image, layout.lyrics, contextColor, separation);
+                Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 60);
+                Bitmap small = render(lyricsFace, width, height);
+                check(lyricBands(small, layout.lyrics, contextColor, separation) > normalLines,
+                        "smaller lyrics show more context in " + names[i]);
+                save(small, names[i] + "-small.png");
+                small.recycle();
+                Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 100);
+            }
+            image.recycle();
+        }
+        for (MusicLyrics.Position position : MusicLyrics.Position.OPTIONS) {
+            if (position == MusicLyrics.Position.AUTO) continue;
+            Scene.put(lyricComponent.options, MusicLyrics.POSITION, position.id);
+            int width = Math.round(680 * density), height = Math.round(430 * density);
+            ClockLayout.Area cell = ClockLayout.arrange(width, height, null, 0).get(0)[0];
+            MusicLayout layout = new MusicLayout();
+            layout.arrange(cell.width(), cell.height(), density, 1f, position, 60, LrcLyrics.PREVIEW.lineCount());
+            boolean horizontal = position == MusicLyrics.Position.LEFT || position == MusicLyrics.Position.RIGHT;
+            check(layout.sideBySide == horizontal, "manual placement uses the selected axis " + position.id);
+            check((horizontal ? layout.lyrics.centerX() : layout.lyrics.centerY())
+                            * (position == MusicLyrics.Position.LEFT || position == MusicLyrics.Position.TOP ? -1f : 1f) > 0,
+                    "lyrics occupy the selected side " + position.id);
+            float playerScale = layout.playerScale;
+            float buttonX = layout.playerLeft + MediaControls.X[1] * playerScale;
+            float buttonY = layout.playerTop + MediaControls.COMPACT_Y * playerScale;
+            check(layout.hit(buttonX, buttonY, density) == 1 && !layout.lyrics.contains(buttonX, buttonY),
+                    "playback remains clickable opposite the lyrics " + position.id);
+            Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 60);
+            Bitmap small = render(lyricsFace, width, height);
+            Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 160);
+            Bitmap large = render(lyricsFace, width, height);
+            check(lyricPixels(large, layout.lyrics) > lyricPixels(small, layout.lyrics) * 2,
+                    "the font setting changes the rendered lyric size " + position.id);
+            layout.arrange(cell.width(), cell.height(), density, 1f, position, 160, LrcLyrics.PREVIEW.lineCount());
+            check(layout.playerScale == playerScale, "lyric size does not change the player size " + position.id);
+            Scene.Component restored = Scene.parse(preview.json()).pages.get(0).slots[0];
+            check(MusicLyrics.position(restored) == position && MusicLyrics.fontSize(restored) == 160,
+                    "manual lyric settings survive saving " + position.id);
+            save(large, "lyrics-position-" + position.id + ".png");
+            large.recycle();
+            small.recycle();
+        }
+        MusicLayout.Line label = new MusicLayout.Line();
+        check(label.layout("风越过长街也穿过窗台我们并肩看见城市的灯火渐渐亮起", 32, 225,
+                Typeface.DEFAULT, android.text.Layout.Alignment.ALIGN_NORMAL, 2).getLineCount() == 2, "long lyrics wrap to two lines");
+    }
+
+    private int lyricPixels(Bitmap image, RectF lyrics) {
+        float x = image.getWidth() / 2f;
+        float y = image.getHeight() / 2f;
+        int count = 0;
+        for (int row = Math.round(y + lyrics.top); row < y + lyrics.bottom; row += 3) {
+            for (int col = Math.round(x + lyrics.left); col < x + lyrics.right; col += 3) {
+                if (image.getPixel(col, row) == 0xffb4f0bf) count++;
+            }
+        }
+        return count;
+    }
+
+    private int lyricBands(Bitmap image, RectF lyrics, int color, int separation) {
+        float centerX = image.getWidth() / 2f;
+        float centerY = image.getHeight() / 2f;
+        int lastTextRow = -1000;
+        int bands = 0;
+        for (int row = Math.round(centerY + lyrics.top); row < centerY + lyrics.bottom; row++) {
+            for (int col = Math.round(centerX + lyrics.left); col < centerX + lyrics.right; col += 3) {
+                if (image.getPixel(col, row) != color) continue;
+                if (row - lastTextRow > separation) bands++;
+                lastTextRow = row;
+                break;
+            }
+        }
+        return bands;
     }
 
     private void gradientChecks(){

@@ -425,6 +425,9 @@ final class ComponentInspector {
         UiKit.toggle(c, card, "第三方实时频谱（可选）", MusicSpectrum.enabled(c, prefs), host::onSpectrumAccess);
         UiKit.note(c, card, "开启时 Android 会请求录音权限，用于分析设备正在播放的声音。");
         LinearLayout lyrics = UiKit.card(c, container, "歌词", null);
+        UiKit.toggle(c, lyrics, "联网查找歌词", OnlineLyrics.enabled(prefs),
+                enabled -> prefs.edit().putBoolean(MusicLyrics.ONLINE, enabled).apply());
+        UiKit.note(c, lyrics, "优先读取播放器原生歌词（元数据、状态栏歌词、蓝牙歌词与歌词广播）；未提供时自动向 LRCLIB 匹配。");
         UiKit.action(c, lyrics, "换歌词版本  ›", host::onChooseMusicLyrics);
         UiKit.action(c, lyrics, "调整歌词时间  ›", host::onAdjustMusicLyrics);
         UiKit.action(c, lyrics, "导入当前曲目的 LRC 歌词  ›", host::onImportMusicLyrics);

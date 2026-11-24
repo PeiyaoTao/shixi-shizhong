@@ -980,10 +980,13 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             else{
                 Scene.Component selected = component();
                 if (selected.type.equals("music")) {
-                    UiKit.toggle(this, style, "显示歌词", selected.bool(MusicLyrics.SHOW, false), shown -> {
+                    boolean lyricsShown = selected.bool(MusicLyrics.SHOW, false);
+                    UiKit.toggle(this, style, "显示歌词", lyricsShown, shown -> {
                         Scene.put(selected.options, MusicLyrics.SHOW, shown);
                         changed();
+                        show();
                     });
+                    if (lyricsShown) musicLyricsAppearance(style, selected);
                 }
                 if (ComponentStyles.hasMusicArtwork(selected)) {
                     UiKit.choice(this, style, "造型", new String[]{"写实", "矢量"},
@@ -1000,6 +1003,23 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         savedStatus=UiKit.text(this,"已自动保存",10,UiKit.MUTED);savedStatus.setPadding(dp(2),dp(8),0,0);body.addView(savedStatus);
 
     }
+
+    private void musicLyricsAppearance(LinearLayout host, Scene.Component component) {
+        MusicLyrics.Position[] positions = MusicLyrics.Position.OPTIONS;
+        String[] labels = new String[positions.length];
+        for (int i = 0; i < positions.length; i++) labels[i] = positions[i].label;
+        UiKit.choice(this, host, "歌词位置", labels, MusicLyrics.position(component).ordinal(), choice -> {
+            Scene.put(component.options, MusicLyrics.POSITION, positions[choice].id);
+            changed();
+            show();
+        });
+        UiKit.slider(this, host, "歌词字号", MusicLyrics.fontSize(component),
+                MusicLyrics.MIN_FONT_SIZE, MusicLyrics.MAX_FONT_SIZE, "%", value -> {
+                    Scene.put(component.options, MusicLyrics.FONT_SIZE, value);
+                    changed();
+                });
+    }
+
     private void openSelector(boolean types) {
         libraryType = component().type;
         openPreviewPicker(types ? PreviewPicker.COMPONENT : PreviewPicker.STYLE);
@@ -1511,8 +1531,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         ComponentInspector.alarmDataCard(this, body);
 
         LinearLayout lyrics = UiKit.card(this, body, "音乐歌词", null);
-        prefToggle(lyrics, "联网查找歌词", MusicLyrics.ONLINE, false);
-        UiKit.note(this, lyrics, "开启后，时栖时钟会向 LRCLIB 发送当前曲目的歌名和歌手，以查找同步歌词。");
+        prefToggle(lyrics, "联网查找歌词", MusicLyrics.ONLINE, MusicLyrics.ONLINE_DEFAULT);
+        UiKit.note(this, lyrics, "优先读取播放器原生歌词（元数据、状态栏歌词、蓝牙歌词与歌词广播）；未提供时向 LRCLIB 自动匹配，仅发送歌名和歌手。");
 
         LinearLayout permissions = UiKit.card(this, body, "权限与锁屏隐私", null);
         permissions.setTag(PERMISSION_SETTINGS);
@@ -1522,7 +1542,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             () -> calendarPermission(calendarGranted));
         UiKit.action(this, permissions, "音乐访问 · " + (DeskData.hasMusicAccess(this) ? "已开启  ›" : "未开启  ›"),
             this::openMusicAccess);
-        UiKit.note(this, permissions, "音乐访问用于读取播放状态，与应用通知显示分别授权。");
+        UiKit.note(this, permissions, "音乐访问用于读取播放状态与播放器歌词通知，不读取其他应用通知。");
         UiKit.toggle(this, permissions, "第三方实时频谱（可选）", MusicSpectrum.enabled(this, prefs),
             this::setSpectrumAccess);
         UiKit.action(this, permissions, "天气定位 · " + (WeatherLocation.allowed(this) ? "已允许  ›" : "按需授权  ›"),
@@ -1607,7 +1627,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         if (!testMode) DeskData.refresh(this, false);
         MediaController controller = DeskData.musicAllowed ? DeskData.media : null;
         MediaMetadata metadata = controller == null ? null : controller.getMetadata();
-        MusicLyrics.Track track = MusicLyrics.track(metadata, MusicLyrics.key(controller, metadata));
+        MusicLyrics.Track track = MusicLyrics.track(controller, metadata, MusicLyrics.key(controller, metadata));
         if (track == null) {
             message(DeskData.musicAllowed ? "请先在播放器中选择一首曲目。"
                     : "请先开启音乐访问，以识别当前曲目。");
@@ -1622,7 +1642,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             message("播放器没有提供完整的歌名和歌手。可以导入这首歌的 LRC 歌词。");
             return;
         }
-        if (!prefs.getBoolean(MusicLyrics.ONLINE, false)) {
+        if (!prefs.getBoolean(MusicLyrics.ONLINE, MusicLyrics.ONLINE_DEFAULT)) {
             AppDialogs.builder(this).setTitle("开启联网查找歌词？")
                     .setMessage("开启后，时栖时钟会向 LRCLIB 发送当前曲目的歌名和歌手。可在「设置 → 数据与权限」关闭。")
                     .setNegativeButton("取消", null)
@@ -1639,7 +1659,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         OnlineLyrics.search(this, track, result -> {
             if (!progress.isShowing() || isFinishing() || isDestroyed()) return;
             progress.dismiss();
-            if (!prefs.getBoolean(MusicLyrics.ONLINE, false)) return;
+            if (!prefs.getBoolean(MusicLyrics.ONLINE, MusicLyrics.ONLINE_DEFAULT)) return;
             String title = "换歌词版本 · " + track.title;
             AlertDialog.Builder options = AppDialogs.builder(this).setTitle(title).setNegativeButton("关闭", null);
             if (OnlineLyrics.selected(this, track) != null) {
@@ -1647,8 +1667,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
                         .remove(MusicLyrics.selectedOnlineKey(track.key)).apply());
             }
             if (result.candidates.isEmpty()) {
-                options.setMessage(result.unavailable ? "暂时无法连接歌词库，请稍后再试。"
-                        : "未找到带时间戳的歌词。可以导入 LRC 文件。");
+                options.setMessage(result.failure == null ? "未找到带时间戳的歌词。可以导入 LRC 文件。"
+                        : result.failure.label + "，请稍后再试。");
             } else {
                 String[] labels = new String[result.candidates.size()];
                 for (int i = 0; i < labels.length; i++) labels[i] = result.candidates.get(i).label();

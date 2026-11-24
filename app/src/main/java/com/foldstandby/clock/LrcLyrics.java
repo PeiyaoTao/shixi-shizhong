@@ -7,7 +7,9 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
@@ -19,15 +21,19 @@ final class LrcLyrics {
     private static final Pattern TIME = Pattern.compile("\\[(\\d{1,6}):([0-5]\\d)(?:[.:](\\d{1,3}))?\\]\\s*");
     private static final Pattern WORD_TIME = Pattern.compile("<\\d{1,6}:[0-5]\\d(?:[.:]\\d{1,3})?>");
     private static final Pattern OFFSET = Pattern.compile("\\[offset:\\s*([+-]?\\d{1,9})\\s*\\]", Pattern.CASE_INSENSITIVE);
-    private static final LrcLyrics EMPTY = new LrcLyrics(new long[0], new String[0]);
-    static final LrcLyrics PREVIEW = parse("[01:12]夜风吹过街角\n[01:19]留一束光等天亮\n[01:26]把回声交给远方\n[01:32]");
+    private static final LrcLyrics EMPTY = new LrcLyrics(new long[0], new String[0], false);
+    static final LrcLyrics PREVIEW = parse("[00:48]窗外的灯一盏盏亮\n[00:54]雨声落在屋檐上\n[01:00]往来的人各有去处\n"
+            + "[01:06]听一听此刻的安静\n[01:12]夜风吹过街角\n[01:19]留一束光等天亮\n[01:26]把回声交给远方\n"
+            + "[01:32]慢慢走过那条长路\n[01:38]把晚安说给星光\n[01:44]天边有一片微光\n[01:50]");
 
     private final long[] times;
     private final String[] lines;
+    private final boolean live;
 
-    private LrcLyrics(long[] times, String[] lines) {
+    private LrcLyrics(long[] times, String[] lines, boolean live) {
         this.times = times;
         this.lines = lines;
+        this.live = live;
     }
 
     static String read(InputStream input) throws IOException {
@@ -84,10 +90,34 @@ final class LrcLyrics {
             times[i] = cue.getKey() - offset;
             lines[i++] = cue.getValue();
         }
-        return new LrcLyrics(times, lines);
+        return new LrcLyrics(times, lines, false);
+    }
+
+    static LrcLyrics live(List<String> historyAndCurrent) {
+        if (historyAndCurrent == null || historyAndCurrent.isEmpty()) return EMPTY;
+        List<String> cleaned = new ArrayList<>();
+        for (String raw : historyAndCurrent) {
+            if (raw == null) continue;
+            String text = WORD_TIME.matcher(raw).replaceAll("").trim();
+            if (!text.isEmpty()) cleaned.add(text);
+        }
+        if (cleaned.isEmpty()) return EMPTY;
+        int start = Math.max(0, cleaned.size() - 32);
+        int count = cleaned.size() - start;
+        long[] times = new long[count];
+        String[] lines = new String[count];
+        for (int i = 0; i < count; i++) {
+            times[i] = i;
+            lines[i] = cleaned.get(start + i);
+        }
+        return new LrcLyrics(times, lines, true);
     }
 
     boolean hasLines() { return times.length > 0; }
+
+    boolean isLive() { return live; }
+
+    int lineCount() { return lines.length; }
 
     int indexAt(long position) {
         int match = Arrays.binarySearch(times, position);

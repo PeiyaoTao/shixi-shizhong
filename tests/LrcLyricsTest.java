@@ -22,6 +22,11 @@ public final class LrcLyricsTest {
         require(lyrics.lineAt(lyrics.indexAt(1000)).equals("开场"), "seeking backward");
         require(!LrcLyrics.parse("无时间轴\n[00:00]").hasLines(), "require timed text");
         require(LrcLyrics.parse("[00:00]起句\n[offset:-500]").nextTime(-1) == 500, "negative offset");
+        LrcLyrics live = LrcLyrics.live(java.util.Arrays.asList("", "<00:01.00>第一句", "  ", "第二句"));
+        require(live.hasLines() && live.isLive(), "live stream creates live timeline");
+        require(live.lineCount() == 2 && live.lineAt(live.lineCount() - 1).equals("第二句"), "latest live line is last");
+        require(live.lineAt(0).equals("第一句"), "live stream strips inline word tags and keeps history");
+        require(!LrcLyrics.live(java.util.Collections.singletonList("   ")).hasLines(), "blank live lines are empty");
         for (Charset encoding : new Charset[]{StandardCharsets.UTF_8, StandardCharsets.UTF_16, Charset.forName("GB18030")}) {
             String line = "[00:00.00]初夏";
             require(LrcLyrics.read(new ByteArrayInputStream(line.getBytes(encoding))).equals(line), "encoding " + encoding);
