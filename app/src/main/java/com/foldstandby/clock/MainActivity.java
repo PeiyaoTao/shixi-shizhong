@@ -1255,6 +1255,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             public void onCalendarAccess() { calendarPermission(calendarGranted()); }
             public void onMusicAccess() { openMusicAccess(); }
             public void onImportMusicLyrics() { importMusicLyrics(); }
+            public void onChooseMusicLyrics() { chooseMusicLyrics(); }
+            public void onAdjustMusicLyrics() { adjustMusicLyrics(); }
             public void onSpectrumAccess(boolean enabled) { setSpectrumAccess(enabled); }
             public void onOpenMotionSettings() { openSettings(PAGE_SETTINGS, true, null); }
             public void onOpenTodoInput(String title, String initial, Consumer<String> onValue) { input(title, initial, onValue); }
@@ -1508,6 +1510,10 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         });
         ComponentInspector.alarmDataCard(this, body);
 
+        LinearLayout lyrics = UiKit.card(this, body, "音乐歌词", null);
+        prefToggle(lyrics, "联网查找歌词", MusicLyrics.ONLINE, false);
+        UiKit.note(this, lyrics, "开启后，时栖时钟会向 LRCLIB 发送当前曲目的歌名和歌手，以查找同步歌词。");
+
         LinearLayout permissions = UiKit.card(this, body, "权限与锁屏隐私", null);
         permissions.setTag(PERMISSION_SETTINGS);
         prefToggle(permissions, "锁屏显示日程并允许管理待办", "private", false);
@@ -1597,18 +1603,84 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         openSystemSettings(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), "此设备未提供通知使用权设置");
     }
 
-    private void importMusicLyrics() {
+    private MusicLyrics.Track currentLyricsTrack() {
         if (!testMode) DeskData.refresh(this, false);
         MediaController controller = DeskData.musicAllowed ? DeskData.media : null;
-        MediaMetadata track = controller == null ? null : controller.getMetadata();
-        String key = MusicLyrics.key(controller, track);
-        if (key == null) {
-            message(DeskData.musicAllowed ? "请先在播放器中选择一首曲目，再导入它的 LRC 歌词。"
+        MediaMetadata metadata = controller == null ? null : controller.getMetadata();
+        MusicLyrics.Track track = MusicLyrics.track(metadata, MusicLyrics.key(controller, metadata));
+        if (track == null) {
+            message(DeskData.musicAllowed ? "请先在播放器中选择一首曲目。"
                     : "请先开启音乐访问，以识别当前曲目。");
+        }
+        return track;
+    }
+
+    private void chooseMusicLyrics() {
+        MusicLyrics.Track track = currentLyricsTrack();
+        if (track == null) return;
+        if (!track.searchable()) {
+            message("播放器没有提供完整的歌名和歌手。可以导入这首歌的 LRC 歌词。");
             return;
         }
-        pendingLyricsKey = key;
-        pendingLyricsTitle = MusicLyrics.title(track);
+        if (!prefs.getBoolean(MusicLyrics.ONLINE, false)) {
+            AppDialogs.builder(this).setTitle("开启联网查找歌词？")
+                    .setMessage("开启后，时栖时钟会向 LRCLIB 发送当前曲目的歌名和歌手。可在「设置 → 数据与权限」关闭。")
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("开启并查找", (dialog, which) -> {
+                        prefs.edit().putBoolean(MusicLyrics.ONLINE, true).apply();
+                        findLyricsVersions(track);
+                    }).show();
+        } else findLyricsVersions(track);
+    }
+
+    private void findLyricsVersions(MusicLyrics.Track track) {
+        AlertDialog progress = AppDialogs.builder(this).setTitle("查找同步歌词")
+                .setMessage(track.title + " · " + track.artist).setNegativeButton("取消", null).show();
+        OnlineLyrics.search(this, track, result -> {
+            if (!progress.isShowing() || isFinishing() || isDestroyed()) return;
+            progress.dismiss();
+            if (!prefs.getBoolean(MusicLyrics.ONLINE, false)) return;
+            String title = "换歌词版本 · " + track.title;
+            AlertDialog.Builder options = AppDialogs.builder(this).setTitle(title).setNegativeButton("关闭", null);
+            if (OnlineLyrics.selected(this, track) != null) {
+                options.setNeutralButton("恢复自动选择", (dialog, which) -> MusicLyrics.library(this).edit()
+                        .remove(MusicLyrics.selectedOnlineKey(track.key)).apply());
+            }
+            if (result.candidates.isEmpty()) {
+                options.setMessage(result.unavailable ? "暂时无法连接歌词库，请稍后再试。"
+                        : "未找到带时间戳的歌词。可以导入 LRC 文件。");
+            } else {
+                String[] labels = new String[result.candidates.size()];
+                for (int i = 0; i < labels.length; i++) labels[i] = result.candidates.get(i).label();
+                options.setItems(labels, (dialog, which) -> {
+                    OnlineLyrics.select(this, track, result.candidates.get(which));
+                    showNotice("已选择「" + track.title + "」的歌词版本");
+                });
+            }
+            options.show();
+        });
+    }
+
+    private void adjustMusicLyrics() {
+        MusicLyrics.Track track = currentLyricsTrack();
+        if (track == null) return;
+        LinearLayout body = UiKit.column(this);
+        body.setPadding(dp(20), dp(4), dp(20), dp(4));
+        UiKit.note(this, body, "正值提前，负值延后。调整只应用于当前曲目。");
+        int[] offset = { MusicLyrics.offset(this, track.key) };
+        UiKit.slider(this, body, "时间偏移", offset[0], -MusicLyrics.MAX_OFFSET, MusicLyrics.MAX_OFFSET,
+                " 毫秒", value -> offset[0] = value);
+        AppDialogs.builder(this).setTitle("调整歌词时间 · " + track.title).setView(body)
+                .setNeutralButton("归零", (dialog, which) -> MusicLyrics.setOffset(this, track.key, 0))
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> MusicLyrics.setOffset(this, track.key, offset[0])).show();
+    }
+
+    private void importMusicLyrics() {
+        MusicLyrics.Track track = currentLyricsTrack();
+        if (track == null) return;
+        pendingLyricsKey = track.key;
+        pendingLyricsTitle = track.title;
         Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                 .addCategory(Intent.CATEGORY_OPENABLE)
                 .setType("*/*");
@@ -1634,7 +1706,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
                 if (input == null) throw new IOException();
                 String lrc = LrcLyrics.read(input).replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "");
                 if (!LrcLyrics.parse(lrc).hasLines()) notice = "文件中没有带时间戳的歌词。";
-                else if (MusicLyrics.library(context).edit().putString(key, lrc).commit()) {
+                else if (MusicLyrics.library(context).edit().putString(key, lrc)
+                        .remove(MusicLyrics.selectedOnlineKey(key)).commit()) {
                     notice = title == null || title.isEmpty() ? "已导入当前曲目的歌词"
                             : "已导入「" + title + "」的歌词";
                 } else notice = "歌词保存失败，请重试。";
@@ -1896,7 +1969,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     private void renderAboutSettings(LinearLayout body) {
         LinearLayout info = UiKit.card(this, body, getString(R.string.app_name) + " " + BuildConfig.VERSION_NAME,
             "桌面时钟 · 无账号、广告或遥测");
-        UiKit.note(this, info, "天气数据来自 Open-Meteo。外屏控制使用 fold-toggle（MIT）。");
+        UiKit.note(this, info, "天气数据来自 Open-Meteo。可选联网歌词来自 LRCLIB。外屏控制使用 fold-toggle（MIT）。");
     }
 
     private void prefToggle(LinearLayout host, String label, String key, boolean fallback) {

@@ -58,6 +58,12 @@ public final class ClockFace extends View {
     private final Rect visibleMusicRect = new Rect();
     private String lyricSource;
     private LrcLyrics lyrics;
+    private String playerLyricSource;
+    private LrcLyrics playerTimeline;
+    private final SharedPreferences.OnSharedPreferenceChangeListener lyricsChanged = (preferences, key) -> invalidate();
+    private final SharedPreferences.OnSharedPreferenceChangeListener lyricSettingChanged = (preferences, key) -> {
+        if (MusicLyrics.ONLINE.equals(key)) lyricsChanged.onSharedPreferenceChanged(preferences, key);
+    };
     private long nextLyricAt, scheduledLyricAt = Long.MAX_VALUE;
     private final Runnable lyricTick = () -> { scheduledLyricAt = Long.MAX_VALUE; invalidate(); };
     private final SharedPreferences prefs;
@@ -200,8 +206,17 @@ public final class ClockFace extends View {
     }
     private long wallTime(){return testTime>=0?testTime:System.currentTimeMillis();}
     private ZonedDateTime now(){return Instant.ofEpochMilli(wallTime()).atZone(ZoneId.systemDefault());}
-    protected void onAttachedToWindow(){super.onAttachedToWindow();if(!managedRefresh){DeskData.observeBattery(getContext(),batteryChanged);AlarmData.observe(getContext(),alarmChanged);}handler.removeCallbacks(refresh);if(!externalTick&&!managedRefresh)handler.post(refresh);}
-    protected void onDetachedFromWindow(){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}super.onDetachedFromWindow();}
+    protected void onAttachedToWindow(){super.onAttachedToWindow();if(!managedRefresh){DeskData.observeBattery(getContext(),batteryChanged);AlarmData.observe(getContext(),alarmChanged);}handler.removeCallbacks(refresh);if(!externalTick&&!managedRefresh)handler.post(refresh);
+        MusicLyrics.library(getContext()).registerOnSharedPreferenceChangeListener(lyricsChanged);
+        OnlineLyrics.cache(getContext()).registerOnSharedPreferenceChangeListener(lyricsChanged);
+        prefs.registerOnSharedPreferenceChangeListener(lyricSettingChanged);
+    }
+    protected void onDetachedFromWindow(){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}
+        MusicLyrics.library(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
+        OnlineLyrics.cache(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
+        prefs.unregisterOnSharedPreferenceChangeListener(lyricSettingChanged);
+        super.onDetachedFromWindow();
+    }
     protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
     long nextDelayMs(){
         long now=System.currentTimeMillis();
@@ -1270,9 +1285,13 @@ public final class ClockFace extends View {
 
         String lyric = "", nextLyric = "";
         if (component.bool(MusicLyrics.SHOW, false)) {
-            LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : position >= 0 ? musicLyrics(controller, meta) : null;
+            String trackKey = demo ? null : MusicLyrics.key(controller, meta);
+            LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : position >= 0 && trackKey != null
+                    ? musicLyrics(controller, meta, trackKey, tracking) : null;
             if (timeline != null) {
-                int index = timeline.indexAt(pos);
+                int offset = MusicLyrics.offset(getContext(), trackKey);
+                long lyricPosition = pos + offset;
+                int index = timeline.indexAt(lyricPosition);
                 lyric = timeline.lineAt(index);
                 float density = getResources().getDisplayMetrics().density;
                 RectF bounds = cells[drawingSlot];
@@ -1280,6 +1299,7 @@ public final class ClockFace extends View {
                     nextLyric = timeline.lineAt(index + 1);
                 }
                 long next = timeline.nextTime(index);
+                if (next != Long.MAX_VALUE) next -= offset;
                 if (tracking && next != Long.MAX_VALUE && (duration <= 0 || next <= duration)) {
                     long delay = Math.max(16L, (long) Math.ceil((next - pos) / (double) speed));
                     if (delay <= 60000L) nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
@@ -1293,9 +1313,28 @@ public final class ClockFace extends View {
         for(int button=0;button<3;button++)musicButton(c,button,playing,available&&MediaControls.enabled(actions,playing,button));
     }
 
-    private LrcLyrics musicLyrics(MediaController controller, MediaMetadata meta) {
-        String key = MusicLyrics.key(controller, meta);
-        String source = key == null ? null : MusicLyrics.library(getContext()).getString(key, null);
+    private LrcLyrics musicLyrics(MediaController controller, MediaMetadata meta, String key, boolean tracking) {
+        Context context = getContext();
+        MusicLyrics.Track track = prefs.getBoolean(MusicLyrics.ONLINE, false)
+                ? MusicLyrics.track(meta, key) : null;
+        String source = track == null ? null : OnlineLyrics.selected(context, track);
+        if (source == null) source = MusicLyrics.library(context).getString(key, null);
+        if (source == null) {
+            String direct = MusicLyrics.playerLyrics(controller, meta);
+            if (!Objects.equals(playerLyricSource, direct)) {
+                playerLyricSource = direct;
+                playerTimeline = LrcLyrics.parse(direct);
+            }
+            if (playerTimeline != null && playerTimeline.hasLines()) return playerTimeline;
+        }
+        if (source == null && track != null) {
+            source = OnlineLyrics.cache(context).getString(track.signature, null);
+            if (source == null && tracking && (externalTick || editorSlot == drawingSlot) && testTime < 0
+                    && motionActive && isAttachedToWindow() && getWindowVisibility() == VISIBLE
+                    && isShown() && getGlobalVisibleRect(visibleMusicRect)) {
+                OnlineLyrics.automatic(context, track, this::invalidate);
+            }
+        }
         if (!Objects.equals(lyricSource, source)) {
             lyricSource = source;
             lyrics = LrcLyrics.parse(source);

@@ -31,6 +31,8 @@ final class ComponentInspector {
         void onCalendarAccess();
         void onMusicAccess();
         void onImportMusicLyrics();
+        void onChooseMusicLyrics();
+        void onAdjustMusicLyrics();
         void onSpectrumAccess(boolean enabled);
         void onOpenMotionSettings();
         void onOpenTodoInput(String title, String initial, Consumer<String> onValue);
@@ -422,7 +424,10 @@ final class ComponentInspector {
         UiKit.action(c, card, "音乐访问 · " + (allowed ? "已开启" : "未开启") + "  ›", host::onMusicAccess);
         UiKit.toggle(c, card, "第三方实时频谱（可选）", MusicSpectrum.enabled(c, prefs), host::onSpectrumAccess);
         UiKit.note(c, card, "开启时 Android 会请求录音权限，用于分析设备正在播放的声音。");
-        UiKit.action(c, card, "导入当前曲目的 LRC 歌词  ›", host::onImportMusicLyrics);
+        LinearLayout lyrics = UiKit.card(c, container, "歌词", null);
+        UiKit.action(c, lyrics, "换歌词版本  ›", host::onChooseMusicLyrics);
+        UiKit.action(c, lyrics, "调整歌词时间  ›", host::onAdjustMusicLyrics);
+        UiKit.action(c, lyrics, "导入当前曲目的 LRC 歌词  ›", host::onImportMusicLyrics);
     }
 
     private static void renderBatteryCard(
