@@ -7,6 +7,8 @@ import android.graphics.*;
 import android.media.*;
 import android.media.session.*;
 import android.os.*;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -29,7 +31,7 @@ public final class ClockFace extends View {
         {"split"},{"digital","date"},{"analog","weather"},{"music","digital"},{"analog","focus"},{"digital","weather","calendar","battery"}
     };
 
-    private final Paint p=new Paint(3);
+    private final TextPaint p=new TextPaint(3);
     private final Rect digitBounds=new Rect(),separatorBounds=new Rect();
     private final Shader[] unitGradients=new Shader[TextGradients.COLORS.length];
     private final Matrix gradientMatrix=new Matrix();
@@ -49,9 +51,18 @@ public final class ClockFace extends View {
     private final Path artClip=new Path();
     private final Map<String,Sandglass> sandglasses=new HashMap<>();
     private final AlarmArtwork alarmArtwork=new AlarmArtwork();
+    private final WeatherArtwork weatherArtwork=new WeatherArtwork();
+    private MusicArtwork musicArtwork;
+    private MusicSpectrum musicSpectrum;
+    private boolean spectrumUsed;
+    private final Rect visibleMusicRect = new Rect();
+    private String lyricSource;
+    private LrcLyrics lyrics;
+    private long nextLyricAt, scheduledLyricAt = Long.MAX_VALUE;
+    private final Runnable lyricTick = () -> { scheduledLyricAt = Long.MAX_VALUE; invalidate(); };
     private final SharedPreferences prefs;
     private final Dashboard config;
-    private int ink,muted; private boolean dark;
+    private int ink,muted,gradient; private boolean dark;
     private Scene scene; private Scene.Page page; private Scene.Component component;
     private boolean bound; private String loaded=""; private int pageIndex;
     private float pagePosition,sceneShiftX,sceneShiftY;private int pageMotionStyle;
@@ -182,7 +193,7 @@ public final class ClockFace extends View {
     boolean pageAnimatingForCheck(){return pageAnimator!=null;}
     float pagePositionForCheck(){return pagePosition;}
     void positionForCheck(float position,int style){cancelPageAnimator();pagePosition=position;pageMotionStyle=style;fadeFromPage=-1;invalidate();}
-    void setMotionActive(boolean active){motionActive=active;if(!active){int savedSubpage=subpage;selectPage(pageIndex);subpage=savedSubpage;handler.removeCallbacks(longPress);}invalidate();}
+    void setMotionActive(boolean active){motionActive=active;if(!active){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);int savedSubpage=subpage;selectPage(pageIndex);subpage=savedSubpage;handler.removeCallbacks(longPress);}invalidate();}
     private void resolve(){
         if(!bound){String json=prefs.getString(Scene.KEY,"");if(scene==null||json.isEmpty()||!json.equals(loaded)){scene=Scene.load(prefs);loaded=json;}pageIndex=Math.max(0,Math.min(pageIndex,scene.pages.size()-1));}
         page=scene.pages.get(pageIndex);config.layout=page.layout;for(int i=0;i<4;i++)config.slots[i]=page.slots[i].type;
@@ -190,8 +201,8 @@ public final class ClockFace extends View {
     private long wallTime(){return testTime>=0?testTime:System.currentTimeMillis();}
     private ZonedDateTime now(){return Instant.ofEpochMilli(wallTime()).atZone(ZoneId.systemDefault());}
     protected void onAttachedToWindow(){super.onAttachedToWindow();if(!managedRefresh){DeskData.observeBattery(getContext(),batteryChanged);AlarmData.observe(getContext(),alarmChanged);}handler.removeCallbacks(refresh);if(!externalTick&&!managedRefresh)handler.post(refresh);}
-    protected void onDetachedFromWindow(){AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}super.onDetachedFromWindow();}
-    protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
+    protected void onDetachedFromWindow(){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}super.onDetachedFromWindow();}
+    protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
     long nextDelayMs(){
         long now=System.currentTimeMillis();
         if(previewPreset>=0)return 60000L-(now%60000L)+50L;
@@ -209,9 +220,14 @@ public final class ClockFace extends View {
     }
     public boolean night(){if(nightPreview!=null)return nightPreview;LocalTime t=LocalTime.now();int minute=t.getHour()*60+t.getMinute(),start=prefs.getInt("nightStart",22)*60+prefs.getInt("nightStartMinute",0),end=prefs.getInt("nightEnd",7)*60+prefs.getInt("nightEndMinute",0);return prefs.getBoolean("night",true)&&(start<end?minute>=start&&minute<end:minute>=start||minute<end);}
     private int color(String role){return scene.color(page,component,role,dark,prefs.getBoolean("nightOwnColors",false));}
-    private void inkShader(float l,float t,float r,float b){if(!dark&&scene!=null&&page!=null&&component!=null&&scene.gradient(page,component)>0)timeShader(l,t,r,b);else p.setShader(null);}
-    private void txt(Canvas c,String s,float x,float y,float size,int color,Typeface font,float width){p.setStyle(Paint.Style.FILL);p.setTypeface(font);p.setTextSize(size);p.setTextAlign(Paint.Align.CENTER);p.setColor(color);if(p.measureText(s)>width)p.setTextSize(size*width/p.measureText(s));if(p.getShader()==null&&color==ink)inkShader(x-width/2,y-size,x+width/2,y);c.drawText(s,x,y,p);p.setShader(null);}
-    private void timeText(Canvas c,String s,float x,float y,float size,float width){timeShader(x-width/2,y-size,x+width/2,y);txt(c,s,x,y,size,ink,font(component),width);p.setShader(null);}
+    private void textColor(int color,float l,float t,float r,float b){
+        p.setColor(color);
+        if(p.getShader()==null&&color!=Color.BLACK&&(color==ink||color==muted)){
+            themeColor(color,color==ink?255:176,l,t,r,b);
+        }
+    }
+    private void txt(Canvas c,String s,float x,float y,float size,int color,Typeface font,float width){p.setStyle(Paint.Style.FILL);p.setTypeface(font);p.setTextSize(size);p.setTextAlign(Paint.Align.CENTER);if(p.measureText(s)>width)p.setTextSize(size*width/p.measureText(s));textColor(color,x-width/2,y-size,x+width/2,y);c.drawText(s,x,y,p);p.setShader(null);}
+    private void timeText(Canvas c,String s,float x,float y,float size,float width){themeShader(x-width/2,y-size,x+width/2,y);txt(c,s,x,y,size,ink,font(component),width);p.setShader(null);}
     /** Keep the separator compact and vertically centered within the time numerals. */
     private void digitalTimeText(Canvas c,String s,float x,float y,float size,float width){
         int colon=s.indexOf(':');
@@ -223,7 +239,7 @@ public final class ClockFace extends View {
         float left=x-measured*fit/2;
         p.setColor(ink);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(size*fit);
         p.getTextBounds("0",0,1,digitBounds);
-        timeShader(x-width/2,y-size,x+width/2,y);
+        themeShader(x-width/2,y-size,x+width/2,y);
         c.drawText(s,0,colon,left,y,p);
         c.drawText(s,colon+1,s.length(),left+(hoursWidth+colonWidth)*fit,y,p);
         p.setTextSize(size*.6f*fit);p.getTextBounds(":",0,1,separatorBounds);
@@ -231,9 +247,9 @@ public final class ClockFace extends View {
         c.drawText(":",left+hoursWidth*fit,baseline,p);
         p.setShader(null);
     }
-    private void timeShader(float x,float y,float right,float bottom){
-        int index=scene.gradient(page,component);
-        if(dark||index==0){p.setShader(null);return;}
+    private void themeShader(float x,float y,float right,float bottom){
+        int index=gradient;
+        if(index==0){p.setShader(null);return;}
         Shader shader=unitGradients[index];
         if(shader==null){shader=TextGradients.unitShader(index);unitGradients[index]=shader;}
         if(cachedGradientId!=index||gradientLeft!=x||gradientTop!=y||gradientRight!=right||gradientBottom!=bottom){
@@ -242,7 +258,16 @@ public final class ClockFace extends View {
         }
         p.setShader(shader);
     }
-    private void line(Canvas c,float x,float y,float ex,float ey,int color,float weight){p.setColor(color);p.setStrokeWidth(weight);p.setStrokeCap(Paint.Cap.ROUND);c.drawLine(x,y,ex,ey,p);}
+    private void themeColor(int color,int opacity,float l,float t,float r,float b){
+        p.setColor(color);
+        themeShader(l,t,r,b);
+        if(gradient>0)p.setAlpha(Math.min(p.getAlpha(),opacity));
+    }
+    private void line(Canvas c,float x,float y,float ex,float ey,int color,float weight){p.setColor(color);strokeLine(c,x,y,ex,ey,weight);}
+    private void strokeLine(Canvas c,float x,float y,float ex,float ey,float weight){p.setStrokeWidth(weight);p.setStrokeCap(Paint.Cap.ROUND);c.drawLine(x,y,ex,ey,p);}
+    private void themedLine(Canvas c,float x,float y,float ex,float ey,int color,float weight,int opacity){
+        themeColor(color,opacity,x,y,ex,ey);strokeLine(c,x,y,ex,ey,weight);p.setShader(null);
+    }
     private String time(ZonedDateTime t){return t.format(component==null||component.bool("h24",true)?FMT_24:FMT_12);}
     private void header(Canvas c,String s){txt(c,s,250,48,20,muted,regular,430);}
     private void foot(Canvas c,String s){txt(c,s,250,365,18,muted,regular,430);}
@@ -251,8 +276,12 @@ public final class ClockFace extends View {
         if(DeskData.systemStateAt==0)DeskData.updateSystemState(getContext(),true);
         resolve();
         observeMedia();
+        spectrumUsed = false;
+        nextLyricAt = Long.MAX_VALUE;
         canvas.drawColor(Color.BLACK);int lower=(int)Math.floor(pagePosition);float fraction=pagePosition-lower;
         if(fadeFromPage>=0&&pageAnimator!=null){drawFadedPage(canvas,fadeFromPage,1-fadeAmount);drawFadedPage(canvas,pageIndex,fadeAmount);}else if(fraction<.001f)drawPage(canvas,PageMotion.index(lower,scene.pages.size()));else{drawMovingPage(canvas,lower,1-fraction);drawMovingPage(canvas,lower+1,fraction);}
+        if (!spectrumUsed) resetMusicSpectrum();
+        updateLyricTick(nextLyricAt);
         resolve();
     }
     private void drawFadedPage(Canvas canvas,int index,float alpha){int save=canvas.saveLayerAlpha(0,0,getWidth(),getHeight(),Math.round(255*alpha));drawPage(canvas,index);canvas.restoreToCount(save);}
@@ -293,6 +322,7 @@ public final class ClockFace extends View {
             drawingSlot=i;
             p.reset();p.setFlags(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
             component=page.slots[i];ink=color(component.type.equals("clock")||component.type.equals("world")?"time":"accent");muted=color("secondary");
+            gradient=dark?0:scene.gradient(page,component);
             RectF r=cells[i];canvas.save();canvas.clipRect(r);
             float scale=Math.min(r.width()/540f,r.height()/432f);
             canvas.translate(r.centerX()+(shiftX-250f)*scale,r.centerY()+(shiftY-200f)*scale);
@@ -300,9 +330,9 @@ public final class ClockFace extends View {
             if(!component.type.equals("clock")){float cs=component.options.optInt("scale",100)/100f;if(Math.abs(cs-1f)>.001f){canvas.translate(250,200);canvas.scale(cs,cs);canvas.translate(-250,-200);}}
             if(!dark&&component.bool("card",!prefs.getBoolean("simple",true))){
                 p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);
-                p.setColor(color("plate"));
+                themeColor(color("plate"),56,cardRect.left,cardRect.top,cardRect.right,cardRect.bottom);
                 canvas.drawRoundRect(cardRect,24,24,p);
-                p.setStyle(Paint.Style.FILL);
+                p.setShader(null);p.setStyle(Paint.Style.FILL);
             }
             if(component.type.equals("clock"))clock(canvas,component);else render(canvas,config.slots[i]);canvas.restore();
         }
@@ -328,16 +358,21 @@ public final class ClockFace extends View {
             case "split": case "digital":
                 if(prefs.getBoolean("date",true))header(c,date);
                 if(type.equals("split")){
-                    String[] t=time(now).split(":");txt(c,t[0],137,277,200,ink,numbers,215);txt(c,t[1],363,277,200,dark?ink:0xffe8eaf0,numbers,215);
-                    p.setColor(ink);c.drawCircle(250,194,4,p);c.drawCircle(250,235,4,p);
+                    String[] t=time(now).split(":");txt(c,t[0],137,277,200,ink,numbers,215);themeShader(255,77,470,277);txt(c,t[1],363,277,200,dark?ink:0xffe8eaf0,numbers,215);
+                    dot(c,250,194,4);dot(c,250,235,4);
                 }else txt(c,time(now),250,263,158,ink,numbers,450);
                 if(prefs.getBoolean("seconds",false)&&!dark)foot(c,now.format(FMT_SEC));else if(!prefs.getBoolean("h24",true))foot(c,now.getHour()<12?"上午":"下午");
                 break;
             case "analog":
-                for(int n=0;n<60;n++){float r=n%5==0?151:160;line(c,250+SIN_60[n]*r,200-COS_60[n]*r,250+SIN_60[n]*168,200-COS_60[n]*168,n%5==0?ink:muted,n%5==0?3:1);}
+                for(int n=0;n<60;n++){
+                    boolean major=n%5==0;float r=major?151:160;
+                    themeColor(major?ink:muted,major?255:150,82,32,418,368);
+                    strokeLine(c,250+SIN_60[n]*r,200-COS_60[n]*r,250+SIN_60[n]*168,200-COS_60[n]*168,major?3:1);
+                }
+                themeShader(82,32,418,368);
                 hand(c,(now.getHour()%12+now.getMinute()/60f)*30,88,7,ink);hand(c,now.getMinute()*6,131,4,dark?ink:0xffeeeeed);
                 if(prefs.getBoolean("seconds",false)&&!dark)hand(c,now.getSecond()*6,140,2,muted);
-                p.setColor(ink);c.drawCircle(250,200,7,p);break;
+                dot(c,250,200,7);break;
             case "date":month(c,now);break;
             case "calendar":
                 agenda(c);break;
@@ -362,7 +397,7 @@ public final class ClockFace extends View {
         switch(slot.style){
             case "flip":
                 String[] parts=value.split(":");flip(c,slot.id+"h",parts[0],20,94,216,228,170,o,true);flip(c,slot.id+"m",parts[1],264,94,216,228,170,o,true);
-                p.setColor(ink);timeShader(20,94,480,322);c.drawCircle(250,189,3,p);c.drawCircle(250,226,3,p);p.setShader(null);
+                p.setColor(ink);themeShader(20,94,480,322);c.drawCircle(250,189,3,p);c.drawCircle(250,226,3,p);p.setShader(null);
                 if(seconds){if(o.optBoolean("flipSeconds",false))flip(c,slot.id+"s",t.format(FMT_SEC),216,334,68,49,38,o,true);else foot(c,t.format(FMT_SEC));}
                 break;
             case "led":electronic(c,value,seconds?t.format(FMT_SEC):null,o,false);break;
@@ -372,19 +407,21 @@ public final class ClockFace extends View {
         if(!seconds&&!slot.bool("h24",true))foot(c,t.getHour()<12?"上午":"下午");c.restore();
     }
     private void analog(Canvas c,ZonedDateTime t,JSONObject o,boolean industrial,boolean seconds){
-        if(industrial&&!dark){p.setColor(Color.BLACK);c.drawRoundRect(67,17,433,383,24,24,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);p.setColor(color("plate"));c.drawRoundRect(67,17,433,383,24,24,p);p.setStyle(Paint.Style.FILL);}
+        if(industrial&&!dark){p.setColor(Color.BLACK);c.drawRoundRect(67,17,433,383,24,24,p);themedOutline(c,67,17,433,383,24,color("plate"),1.5f,56);}
         boolean major=o.optBoolean("major",true),minor=o.optBoolean("minor",true);int labels=o.optInt("labels",industrial?1:0);
         for(int n=0;n<60;n++){boolean hour=n%5==0;if(hour&&!major||!hour&&!minor)continue;float outer=164;
             float inner=outer-(hour?o.optInt("majorLength",industrial?19:15):o.optInt("minorLength",6));float weight=hour?o.optInt("majorWidth",industrial?5:3):o.optInt("minorWidth",1);
-            if(hour)inkShader(86,36,414,364);line(c,250+SIN_60[n]*inner,200-COS_60[n]*inner,250+SIN_60[n]*outer,200-COS_60[n]*outer,color(hour?"major":"minor"),weight);p.setShader(null);
+            themeColor(color(hour?"major":"minor"),hour?255:150,86,36,414,364);
+            strokeLine(c,250+SIN_60[n]*inner,200-COS_60[n]*inner,250+SIN_60[n]*outer,200-COS_60[n]*outer,weight);
         }
+        p.setShader(null);
         String[] roman={"XII","I","II","III","IV","V","VI","VII","VIII","IX","X","XI"};
-        if(labels>0)for(int n=0;n<12;n++){if(labels==1&&n%3!=0)continue;int idx=n*5;float x=250+SIN_60[idx]*125,y=200-COS_60[idx]*125+8;txt(c,labels==3?roman[n]:String.valueOf(n==0?12:n),x,y,industrial?23:21,color("numerals"),font(component),54);}
+        if(labels>0)for(int n=0;n<12;n++){if(labels==1&&n%3!=0)continue;int idx=n*5;float x=250+SIN_60[idx]*125,y=200-COS_60[idx]*125+8;themeShader(86,36,414,364);txt(c,labels==3?roman[n]:String.valueOf(n==0?12:n),x,y,industrial?23:21,color("numerals"),font(component),54);}
         boolean smooth=seconds&&o.optBoolean("smooth",false);float sec=t.getSecond()+(smooth?t.getNano()/1000000000f:0);
         float strength=o.optInt("handWidth",industrial?9:6);
-        inkShader(100,50,400,350);hand(c,(t.getHour()%12+t.getMinute()/60f)*30,labels>0?72:88,strength,color("hour"));hand(c,(t.getMinute()+sec/60f)*6,labels>0?109:131,Math.max(2,strength*.55f),color("minute"));p.setShader(null);
+        themeShader(100,50,400,350);hand(c,(t.getHour()%12+t.getMinute()/60f)*30,labels>0?72:88,strength,color("hour"));hand(c,(t.getMinute()+sec/60f)*6,labels>0?109:131,Math.max(2,strength*.55f),color("minute"));
         if(seconds){hand(c,sec*6,143,industrial?2.5f:1.5f,color("second"));if(smooth&&testTime<0)animateEffect(33);}
-        inkShader(240,190,260,210);p.setColor(color("hour"));c.drawCircle(250,200,industrial?8:6,p);p.setShader(null);if(component.bool("date",true)&&!dark)txt(c,t.format(FMT_DATE),250,382,12,ink,regular,400);
+        themeShader(240,190,260,210);p.setColor(color("hour"));c.drawCircle(250,200,industrial?8:6,p);p.setShader(null);if(component.bool("date",true)&&!dark)txt(c,t.format(FMT_DATE),250,382,12,ink,regular,400);
     }
     private void flip(Canvas c,String key,String value,float x,float y,float w,float h,float textSize,JSONObject o,boolean animate){
         long current=wallTime();FlipState f=flips.get(key);if(f==null){f=new FlipState();f.value=value;f.old=value;flips.put(key,f);}
@@ -400,7 +437,10 @@ public final class ClockFace extends View {
             int half=progress<.5f?0:1;flipHalf(c,half==0?f.old:f.value,w,h,textSize,half,true);p.setColor(Color.argb((int)(110*Math.sin(progress*Math.PI)),0,0,0));c.drawRect(0,half==0?0:h/2,w,half==0?h/2:h,p);c.restore();
             if(testTime<0)postInvalidateOnAnimation();
         }
-        line(c,1,h/2,w-1,h/2,0xff070a0e,2);p.setColor(0xff414955);c.drawRoundRect(0,h/2-6,4,h/2+6,2,2,p);c.drawRoundRect(w-4,h/2-6,w,h/2+6,2,2,p);c.restore();
+        line(c,1,h/2,w-1,h/2,0xff070a0e,2);
+        themeColor(0xff414955,110,0,h/2,w,h/2);
+        c.drawRoundRect(0,h/2-6,4,h/2+6,2,2,p);c.drawRoundRect(w-4,h/2-6,w,h/2+6,2,2,p);
+        p.setShader(null);c.restore();
     }
     private void flipFeedback(JSONObject options,long current){
         if(!flipFeedbackEnabled||demo||dark||!motionActive||!isAttachedToWindow()||!isShown()||getWindowVisibility()!=VISIBLE||page!=scene.pages.get(pageIndex))return;
@@ -422,43 +462,50 @@ public final class ClockFace extends View {
     private void flipHalf(Canvas c,String value,float w,float h,float textSize,int half,boolean moving){
         c.save();c.clipRect(0,half==0?0:h/2,w,half==0?h/2:h);p.setColor(Color.BLACK);c.drawRoundRect(0,0,w,h,12,12,p);
         p.setTypeface(font(component));p.setTextSize(textSize);p.setTextAlign(Paint.Align.CENTER);p.setColor(ink);float measured=p.measureText(value);if(measured>w-18)p.setTextSize(textSize*(w-18)/measured);
-        Paint.FontMetrics fm=p.getFontMetrics();timeShader(0,0,w,h);c.drawText(value,w/2,h/2-(fm.ascent+fm.descent)/2,p);p.setShader(null);
-        p.setColor(color("plate"));p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);c.drawRoundRect(.5f,.5f,w-.5f,h-.5f,12,12,p);p.setStyle(Paint.Style.FILL);c.restore();
+        Paint.FontMetrics fm=p.getFontMetrics();themeShader(0,0,w,h);c.drawText(value,w/2,h/2-(fm.ascent+fm.descent)/2,p);p.setShader(null);
+        themedOutline(c,.5f,.5f,w-.5f,h-.5f,12,color("plate"),1,52);c.restore();
     }
     private static final int[] SEGMENTS={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
     private void electronic(Canvas c,String value,String seconds,JSONObject o,boolean dot){c.save();if(seconds!=null){c.translate(0,32);c.scale(.8f,.8f);}if(dot)dots(c,value,o);else segments(c,value,o);c.restore();if(seconds!=null){c.save();c.translate(402,174);c.scale(.34f,.34f);if(dot)dots(c,seconds,o);else segments(c,seconds,o);c.restore();}}
     private void segments(Canvas c,String value,JSONObject o){
         float x=24,y=132,unit=1.5f;for(char ch:value.toCharArray()){
-            if(ch==':'){p.setColor(ink);timeShader(24,132,460,260);c.drawCircle(x+12,y+40,4,p);c.drawCircle(x+12,y+94,4,p);p.setShader(null);x+=35;continue;}
+            if(ch==':'){p.setColor(ink);themeShader(24,132,460,260);c.drawCircle(x+12,y+40,4,p);c.drawCircle(x+12,y+94,4,p);p.setShader(null);x+=35;continue;}
             int bits=SEGMENTS[ch-'0'];float[][] lines={{9,3,42,3},{46,8,46,38},{46,46,46,76},{9,81,42,81},{4,46,4,76},{4,8,4,38},{9,42,42,42}};
-            for(int i=0;i<7;i++){boolean on=(bits&(1<<i))!=0;int col=on?ink:(ink&0x00ffffff)|0x18000000;float[] l=lines[i];p.setStrokeCap(Paint.Cap.SQUARE);p.setStrokeWidth(o.optInt("thickness",5)*unit);p.setColor(col);if(on)timeShader(24,132,460,260);else p.setShader(null);c.drawLine(x+l[0]*unit,y+l[1]*unit,x+l[2]*unit,y+l[3]*unit,p);}x+=100;p.setShader(null);
+            for(int i=0;i<7;i++){boolean on=(bits&(1<<i))!=0;float[] l=lines[i];p.setStrokeCap(Paint.Cap.SQUARE);p.setStrokeWidth(o.optInt("thickness",5)*unit);p.setColor(on?ink:softInk(24));themeShader(24,132,460,260);c.drawLine(x+l[0]*unit,y+l[1]*unit,x+l[2]*unit,y+l[3]*unit,p);}x+=100;p.setShader(null);
         }
     }
     private static final String[] DOTS={"01110100011001110101110011000101110","00100011000010000100001000010001110","01110100010000100010001000100011111","11110000010000101110000010000111110","00010001100101010010111110001000010","11111100001111000001000011000101110","00110010001000011110100011000101110","11111000010001000100010000100001000","01110100011000101110100011000101110","01110100011000101111000010001001100"};
     private void dots(Canvas c,String value,JSONObject o){float start=28,top=133,step=17;for(char ch:value.toCharArray()){
-        if(ch==':'){p.setColor(ink);timeShader(28,133,460,250);c.drawCircle(start+8,top+step*2,4,p);c.drawCircle(start+8,top+step*4,4,p);p.setShader(null);start+=34;continue;}
-        String map=DOTS[ch-'0'];for(int row=0;row<7;row++)for(int col=0;col<5;col++){boolean on=map.charAt(row*5+col)=='1';p.setColor(on?ink:(ink&0x00ffffff)|0x12000000);if(on)timeShader(28,133,460,250);else p.setShader(null);float x=start+col*step,y=top+row*step,r=o.optInt("radius",4);if(o.optBoolean("square",false))c.drawRect(x-r,y-r,x+r,y+r,p);else c.drawCircle(x,y,r,p);}start+=100;p.setShader(null);}}
+        if(ch==':'){p.setColor(ink);themeShader(28,133,460,250);c.drawCircle(start+8,top+step*2,4,p);c.drawCircle(start+8,top+step*4,4,p);p.setShader(null);start+=34;continue;}
+        String map=DOTS[ch-'0'];for(int row=0;row<7;row++)for(int col=0;col<5;col++){boolean on=map.charAt(row*5+col)=='1';p.setColor(on?ink:softInk(18));themeShader(28,133,460,250);float x=start+col*step,y=top+row*step,r=o.optInt("radius",4);if(o.optBoolean("square",false))c.drawRect(x-r,y-r,x+r,y+r,p);else c.drawCircle(x,y,r,p);}start+=100;p.setShader(null);}}
     private void hand(Canvas c,float angle,float length,float weight,int color){double a=Math.toRadians(angle);line(c,250,200,250+(float)Math.sin(a)*length,200-(float)Math.cos(a)*length,color,weight);}
     private String privateAgenda(boolean today){if(demo)return "09:30  规划今日\n14:00  项目讨论\n18:30  阅读";if(getContext().checkSelfPermission(android.Manifest.permission.READ_CALENDAR)!=android.content.pm.PackageManager.PERMISSION_GRANTED)return "未授权日历";if(DeskData.keyguardLocked&&!prefs.getBoolean("private",false))return "解锁查看事项";String value=today?DeskData.todayAgenda:DeskData.agenda;return value.isEmpty()?"读取中":value;}
     private int variant(){return ComponentStyles.selectedIndex(component);}
-    private void outline(Canvas c,float l,float t,float r,float b,float radius,int color,float width){
-        p.setShader(null);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(width);p.setColor(color);
+    private void themedOutline(Canvas c,float l,float t,float r,float b,float radius,int color,float width,int opacity){
+        themeColor(color,opacity,l,t,r,b);strokeOutline(c,l,t,r,b,radius,width);p.setShader(null);
+    }
+    private void strokeOutline(Canvas c,float l,float t,float r,float b,float radius,float width){
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(width);
         c.drawRoundRect(l,t,r,b,radius,radius,p);p.setStyle(Paint.Style.FILL);
     }
     private void primaryRect(Canvas c,float l,float t,float r,float b,float radius){
-        if(r<=l||b<=t)return;p.setStyle(Paint.Style.FILL);p.setColor(ink);inkShader(l,t,r,b);
+        themedRect(c,l,t,r,b,radius,ink,255);
+    }
+    private void themedRect(Canvas c,float l,float t,float r,float b,float radius,int color,int opacity){
+        if(r<=l||b<=t)return;
+        p.setStyle(Paint.Style.FILL);themeColor(color,opacity,l,t,r,b);
         c.drawRoundRect(l,t,r,b,radius,radius,p);p.setShader(null);
     }
     private void progress(Canvas c,float l,float y,float width,float fraction,float weight){
-        line(c,l,y,l+width,y,(muted&0xffffff)|0x40000000,weight);
-        if(fraction>0){inkShader(l,y-weight,l+width,y+weight);line(c,l,y,l+width*Math.min(1,fraction),y,ink,weight);p.setShader(null);}
+        themedLine(c,l,y,l+width,y,(muted&0xffffff)|0x40000000,weight,64);
+        if(fraction>0){themeShader(l,y-weight,l+width,y+weight);line(c,l,y,l+width*Math.min(1,fraction),y,ink,weight);p.setShader(null);}
     }
     private void textLeft(Canvas c,String text,float x,float y,float size,int color,Typeface font,float width){
         p.setShader(null);p.setStyle(Paint.Style.FILL);p.setTypeface(font);p.setTextSize(size);
-        p.setColor(color);p.setTextAlign(Paint.Align.LEFT);
+        p.setTextAlign(Paint.Align.LEFT);
         float measured=p.measureText(text);
         if(measured>width)p.setTextSize(size*width/measured);
-        if(color==ink)inkShader(x,y-size,x+width,y);
+        textColor(color,x,y-size,x+width,y);
         c.drawText(text,x,y,p);p.setShader(null);
     }
     private void fill(Canvas c,float l,float t,float r,float b,float radius,int color){
@@ -466,7 +513,7 @@ public final class ClockFace extends View {
         c.drawRoundRect(l,t,r,b,radius,radius,p);
     }
     private void dot(Canvas c,float x,float y,float radius){
-        p.setStyle(Paint.Style.FILL);p.setColor(ink);inkShader(x-radius,y-radius,x+radius,y+radius);
+        p.setStyle(Paint.Style.FILL);p.setColor(ink);themeShader(x-radius,y-radius,x+radius,y+radius);
         c.drawCircle(x,y,radius,p);p.setShader(null);
     }
     private int softInk(int opacity){return (ink&0xffffff)|(opacity<<24);}
@@ -476,8 +523,8 @@ public final class ClockFace extends View {
     private void dateVariant(Canvas c,ZonedDateTime now,int style){
         LocalDate today=now.toLocalDate();
         if(style==1){
-            outline(c,53,78,447,300,16,muted,1.5f);
-            for(int i=0;i<12;i++)line(c,280,94+i*17,280,100+i*17,color("plate"),2);
+            themedOutline(c,53,78,447,300,16,muted,1.5f,160);
+            for(int i=0;i<12;i++)themedLine(c,280,94+i*17,280,100+i*17,color("plate"),2,54);
             fill(c,45,179,61,195,8,Color.BLACK);fill(c,439,179,455,195,8,Color.BLACK);
             timeText(c,String.format(Locale.ROOT,"%02d",today.getDayOfMonth()),166,243,151,208);
             textLeft(c,today.getYear()+"年",303,137,23,muted,regular,123);
@@ -512,23 +559,23 @@ public final class ClockFace extends View {
                 int col=(m-1)%4,row=(m-1)/4;float x=30+col*120,y=88+row*85;
                 txt(c,m+"月",x+39,y,16,m==today.getMonthValue()?ink:muted,bold,95);
                 int offset=monthOffsets[m-1],len=monthLengths[m-1];
-                p.setShader(null);p.setColor(normalColor);
                 for(int d=1;d<=len;d++){
                     int pos=offset+d-1;float dx=x+(pos%7)*13,dy=y+15+(pos/7)*8;
                     if(m==today.getMonthValue()&&d==today.getDayOfMonth()){
-                        p.setColor(ink);inkShader(dx-4,dy-4,dx+4,dy+4);
+                        p.setColor(ink);themeShader(dx-4,dy-4,dx+4,dy+4);
                         c.drawCircle(dx,dy,4,p);
-                        p.setShader(null);p.setColor(normalColor);
                     }else{
+                        themeColor(normalColor,120,x,y,x+95,y+64);
                         c.drawCircle(dx,dy,2,p);
                     }
                 }
+                p.setShader(null);
             }
             if(component.bool("showAgenda",true))agendaPreview(c,365);else foot(c,now.format(FMT_DATE));
         }else{
             txt(c,today.getYear()+" 年",250,65,23,muted,regular,380);
             calendarBlock(c,today.withDayOfMonth(1),today,54);
-            line(c,250,83,250,310,color("plate"),1.5f);
+            themedLine(c,250,83,250,310,color("plate"),1.5f,54);
             calendarBlock(c,today.withDayOfMonth(1).plusMonths(1),today,265);
             agendaPreview(c,347);
         }
@@ -537,7 +584,7 @@ public final class ClockFace extends View {
         String month=first.getYear()==today.getYear()?first.getMonthValue()+"月":first.format(FMT_MONTH);
         textLeft(c,month,left,107,30,ink,bold,175);
         for(int i=0;i<7;i++)txt(c,WEEKDAYS[i],left+12+i*26,141,15,muted,regular,24);
-        line(c,left,153,left+180,153,color("plate"),1);
+        themedLine(c,left,153,left+180,153,color("plate"),1,54);
         int offset=first.getDayOfWeek().getValue()-1;
         for(int d=1;d<=first.lengthOfMonth();d++){
             int pos=offset+d-1;float x=left+12+pos%7*26,y=179+pos/7*24;
@@ -557,10 +604,10 @@ public final class ClockFace extends View {
             for(int i=0;i<Math.min(4,rows.length);i++){
                 float x=50+i%2*207,y=79+i/2*133;
                 String[] event=rows[i].split("  ",2);
-                fill(c,x,y,x+193,y+118,7,softInk(i==0?27:12));
+                themedRect(c,x,y,x+193,y+118,7,softInk(i==0?27:12),255);
                 primaryRect(c,x,y+13,x+3,y+45,1);
                 textLeft(c,event[0],x+15,y+43,35,ink,numbers,163);
-                line(c,x+15,y+56,x+177,y+56,color("plate"),1);
+                themedLine(c,x+15,y+56,x+177,y+56,color("plate"),1,54);
                 textLeft(c,shorten(event.length>1?event[1]:"日程",24),x+15,y+89,23,i==0?ink:muted,regular,163);
             }
             return;
@@ -570,35 +617,38 @@ public final class ClockFace extends View {
             txt(c,"范围内首项",250,94,17,muted,regular,420);
             timeText(c,first[0],250,184,86,420);
             txt(c,first[1],250,249,35,ink,bold,430);
-            line(c,180,283,320,283,color("plate"),2);
+            themedLine(c,180,283,320,283,color("plate"),2,54);
             txt(c,rows.length>1?"随后 · "+rows[1]:"暂无更多事项",250,333,20,muted,regular,430);
             return;
         }
-        if(style==1)line(c,117,92,117,319,color("plate"),2);
+        if(style==1)themedLine(c,117,92,117,319,color("plate"),2,90);
         for(int i=0;i<Math.min(4,rows.length);i++){
             float y=113+i*65;String[] parts=rows[i].split("  ",2);
             if(style==0){
                 txt(c,rows[i],250,y,26,i==0?ink:muted,regular,420);
-                if(i<rows.length-1)line(c,40,y+24,460,y+24,color("plate"),1);
+                if(i<rows.length-1)themedLine(c,40,y+24,460,y+24,color("plate"),1,54);
             }else{
                 txt(c,parts[0],64,y,21,muted,numbers,83);
-                p.setColor(ink);inkShader(111,y-13,123,y-1);c.drawCircle(117,y-7,i==0?6:4,p);p.setShader(null);
+                p.setColor(ink);themeShader(111,y-13,123,y-1);c.drawCircle(117,y-7,i==0?6:4,p);p.setShader(null);
                 txt(c,parts.length>1?parts[1]:"日程",299,y,25,i==0?ink:muted,regular,320);
             }
         }
     }
     private void agendaDial(Canvas c,String[] rows){
         float cx=150,cy=208,r=91;
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);p.setColor(color("plate"));
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);
+        themeColor(color("plate"),80,cx-r,cy-r,cx+r,cy+r);
         c.drawCircle(cx,cy,r,p);p.setStyle(Paint.Style.FILL);
         for(int h=0;h<24;h++){
             double angle=h*Math.PI/12;
             float sin=(float)Math.sin(angle),cos=(float)Math.cos(angle),inner=h%6==0?r-9:r-4;
-            line(c,cx+sin*inner,cy-cos*inner,cx+sin*r,cy-cos*r,muted,h%6==0?2:1);
+            themeColor(muted,h%6==0?172:114,cx-r,cy-r,cx+r,cy+r);
+            strokeLine(c,cx+sin*inner,cy-cos*inner,cx+sin*r,cy-cos*r,h%6==0?2:1);
         }
+        p.setShader(null);
         txt(c,"00",cx,106,17,muted,numbers,34);txt(c,"12",cx,322,17,muted,numbers,34);
         txt(c,"18",78,214,15,muted,numbers,27);txt(c,"06",222,214,15,muted,numbers,27);
-        line(c,263,87,263,324,color("plate"),1);
+        themedLine(c,263,87,263,324,color("plate"),1,54);
         for(int i=0;i<Math.min(4,rows.length);i++){
             String[] event=rows[i].split("  ",2);float y=110+i*61;
             dot(c,283,y-6,10);txt(c,Integer.toString(i+1),283,y-1,14,Color.BLACK,numbers,16);
@@ -638,7 +688,7 @@ public final class ClockFace extends View {
             txt(c,date,250,286,22,muted,regular,430);
             txt(c,remaining,250,324,22,ink,regular,430);
         }else if(style==1){
-            alarmArtwork.palette(ink,muted,color("plate"),dark?0:scene.gradient(page,component));
+            alarmArtwork.palette(ink,muted,color("plate"),gradient);
             alarmArtwork.draw(c,250,175,1.02f,at.getHour(),at.getMinute(),true);
             timeText(c,value,250,292,30,190);
             txt(c,date,250,319,18,muted,regular,430);
@@ -653,12 +703,14 @@ public final class ClockFace extends View {
             txt(c,countdown?"响铃 "+value+period:"",250,293,27,ink,regular,400);
             txt(c,date,250,countdown?330:300,21,muted,regular,400);
         }else if(style==3){
-            fill(c,53,82,447,331,12,softInk(16));
+            themedRect(c,53,82,447,331,12,softInk(16),255);
             primaryRect(c,53,82,447,87,2);
             alarmIcon(c,104,133,.53f);
             textLeft(c,date,145,139,23,muted,regular,270);
             timeText(c,value,250,236,111,350);
-            for(int i=0;i<22;i++)line(c,67+i*17,264,73+i*17,264,muted,1.3f);
+            themeColor(muted,148,67,264,430,264);
+            for(int i=0;i<22;i++)strokeLine(c,67+i*17,264,73+i*17,264,1.3f);
+            p.setShader(null);
             fill(c,45,256,61,272,8,Color.BLACK);fill(c,439,256,455,272,8,Color.BLACK);
             txt(c,remaining,250,306,24,ink,regular,365);
         }else{
@@ -668,25 +720,24 @@ public final class ClockFace extends View {
                 textLeft(c,date.substring(0,dayLabelEnd),304,125,24,ink,bold,143);
                 textLeft(c,date.substring(dayLabelEnd+3),304,158,20,muted,regular,143);
             }else textLeft(c,date,304,155,20,muted,regular,143);
-            float marker=dayBand(c,53,447,245,at,h24);
-            line(c,marker,215,marker,260,ink,2);
-            dot(c,marker,215,8);
+            float marker=dayBand(c,53,447,245,at,h24,WorldDaylight.DEFAULT);
+            dayMarker(c,53,447,marker,215,260,215,8);
             txt(c,remaining,250,326,24,ink,regular,400);
         }
     }
     private void alarmUnit(Canvas c,float x,String value,String label,float width){
         timeText(c,value,x,208,91,width);
-        line(c,x-width*.30f,222,x+width*.30f,222,color("plate"),2);
+        themedLine(c,x-width*.30f,222,x+width*.30f,222,color("plate"),2,54);
         txt(c,label,x,251,22,muted,regular,width);
     }
     private void alarmIcon(Canvas c,float x,float y,float size){
-        alarmArtwork.palette(ink,muted,color("plate"),dark?0:scene.gradient(page,component));
+        alarmArtwork.palette(ink,muted,color("plate"),gradient);
         alarmArtwork.draw(c,x,y,size*.55f,10,10,false);
     }
     private void focus(Canvas c){
         header(c,"专注");
         int style=variant();
-        long total=demo?prefs.getInt("focusMinutes",25)*60000L:DeskData.focusTotal(prefs);
+        long total=demo?DeskData.focusMinutes(prefs)*60000L:DeskData.focusTotal(prefs);
         long left=demo?total*3/5:DeskData.remaining(prefs);float fraction=Math.max(0,Math.min(1,left/(float)total));
         long frameTime=testTime>=0?testTime:SystemClock.elapsedRealtime(),resetAt=prefs.getLong("focusResetAt",-1);
         float resetFrom=prefs.getFloat("focusResetFrom",0);
@@ -699,21 +750,21 @@ public final class ClockFace extends View {
                 if(phase>=Sandglass.DEMO_DRAIN_MS){resetAt=frameTime-(phase-Sandglass.DEMO_DRAIN_MS);resetFrom=0;}
             }
         }
-        String value=String.format(Locale.ROOT,"%02d:%02d",left/60000,(left/1000)%60);
+        String value=FocusDuration.formatCountdown(left);
         if(style==0){
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(6);p.setColor(color("plate"));c.drawArc(arcRect,-90,360,false,p);
-            p.setColor(ink);inkShader(arcRect.left,arcRect.top,arcRect.right,arcRect.bottom);c.drawArc(arcRect,-90,360*fraction,false,p);p.setShader(null);p.setStyle(Paint.Style.FILL);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(6);themeColor(color("plate"),48,arcRect.left,arcRect.top,arcRect.right,arcRect.bottom);c.drawArc(arcRect,-90,360,false,p);
+            p.setColor(ink);themeShader(arcRect.left,arcRect.top,arcRect.right,arcRect.bottom);c.drawArc(arcRect,-90,360*fraction,false,p);p.setShader(null);p.setStyle(Paint.Style.FILL);
             timeText(c,value,250,222,65,250);
         }else if(style==1){
             timeText(c,value,250,232,129,440);
             progress(c,45,285,410,fraction,5);
-            txt(c,"共 "+total/60000+" 分钟",250,326,20,muted,regular,430);
+            txt(c,FocusDuration.totalLabel(total),250,326,20,muted,regular,430);
         }else if(style==2){
             timeText(c,value,147,198,71,196);
             txt(c,"剩余 "+Math.round(fraction*100)+"%",147,243,21,muted,regular,195);
             for(int i=0;i<20;i++){
                 float x=267+i%5*36,y=112+(3-i/5)*42;
-                fill(c,x,y,x+28,y+34,4,color("plate"));
+                themedRect(c,x,y,x+28,y+34,4,color("plate"),48);
                 float fillFraction=Math.max(0,Math.min(1,fraction*20-i));
                 if(fillFraction>0)primaryRect(c,x,y,x+28*fillFraction,y+34,4);
             }
@@ -721,33 +772,35 @@ public final class ClockFace extends View {
             boolean running=prefs.getLong("focusEnd",0)>0&&left>0;
             Sandglass glass=sandglasses.get(component.id);
             if(glass==null){glass=new Sandglass();sandglasses.put(component.id,glass);}
-            glass.palette(ink,muted,color("time"),color("plate"),dark?0:scene.gradient(page,component));
+            glass.palette(ink,muted,color("time"),color("plate"),gradient);
             if(glass.draw(c,fraction,demo||running,effectsEnabled(),frameTime,resetAt,resetFrom))animateEffect(33);
             boolean resetting=glass.isResetting();
             timeText(c,value,358,204,69,246);
             txt(c,"剩余 "+Math.round(fraction*100)+"%",358,248,21,muted,regular,246);
             txt(c,resetting?"翻转复位中":left==0?"沙已落尽":demo||running?"落沙中":fraction<.999f?"已暂停":"准备开始",358,280,16,muted,regular,246);
         }else{
-            int separator=value.indexOf(':');
-            focusTile(c,55,value.substring(0,separator),"分钟");
-            focusTile(c,265,value.substring(separator+1),"秒");
+            String[] tiles=FocusDuration.flipTiles(left);
+            focusTile(c,55,tiles[0],tiles[1]);
+            focusTile(c,265,tiles[2],tiles[3]);
             dot(c,250,174,4);dot(c,250,203,4);
-            txt(c,"共 "+total/60000+" 分钟",250,319,20,muted,regular,400);
+            txt(c,FocusDuration.totalLabel(total),250,319,20,muted,regular,400);
         }
         txt(c,demo?"预览":left==0?"已完成":prefs.getLong("focusEnd",0)>0?"专注中":"轻触开始 · 长按重置",250,351,18,muted,regular,400);
     }
     private void focusTile(Canvas c,float x,String value,String label){
-        fill(c,x,109,x+180,190,9,softInk(25));
-        fill(c,x,193,x+180,271,9,softInk(13));
+        themedRect(c,x,109,x+180,190,9,softInk(25),255);
+        themedRect(c,x,193,x+180,271,9,softInk(13),255);
         timeText(c,value,x+90,235,133,154);
         line(c,x+1,190,x+179,190,Color.BLACK,3);
-        line(c,x,182,x+7,182,muted,3);line(c,x+173,182,x+180,182,muted,3);
+        themeColor(muted,150,x,182,x+180,182);
+        strokeLine(c,x,182,x+7,182,3);strokeLine(c,x+173,182,x+180,182,3);p.setShader(null);
         txt(c,label,x+90,299,21,muted,regular,155);
     }
     Sandglass sandglassForCheck(){return component==null?null:sandglasses.get(component.id);}
     private void world(Canvas c,ZonedDateTime local){
-        String zone=component.options.optString("zone",prefs.getString("zone","Asia/Shanghai"));ZonedDateTime other;
-        try{other=local.withZoneSameInstant(ZoneId.of(zone));}catch(Exception e){other=local;zone=local.getZone().getId();}
+        ZoneId selectedZone=WorldDaylight.zone(component,prefs);
+        String zone=selectedZone.getId();
+        ZonedDateTime other=local.withZoneSameInstant(selectedZone);
         String city=zone.substring(zone.lastIndexOf('/')+1).replace('_',' ');
         int style=variant();
         if(style==4){worldBands(c,city,other,local);return;}
@@ -756,66 +809,88 @@ public final class ClockFace extends View {
         else if(style==1){
             float cx=250,cy=202,r=126;
             for(int i=0;i<60;i++){
-                float inner=i%5==0?r-13:r-4;
-                line(c,cx+SIN_60[i]*inner,cy-COS_60[i]*inner,cx+SIN_60[i]*r,cy-COS_60[i]*r,i%5==0?ink:color("plate"),i%5==0?3:1);
+                boolean major=i%5==0;float inner=major?r-13:r-4;
+                themeColor(major?ink:color("plate"),major?255:68,cx-r,cy-r,cx+r,cy+r);
+                strokeLine(c,cx+SIN_60[i]*inner,cy-COS_60[i]*inner,cx+SIN_60[i]*r,cy-COS_60[i]*r,major?3:1);
             }
+            p.setShader(null);
             for(int i=1;i<=4;i++){int idx=(i*15)%60;txt(c,""+(i*3),cx+SIN_60[idx]*94,cy-COS_60[idx]*94+7,21,muted,numbers,40);}
+            themeShader(cx-r,cy-r,cx+r,cy+r);
             worldHand(c,cx,cy,(other.getHour()%12+other.getMinute()/60f)*30,64,7);
             worldHand(c,cx,cy,other.getMinute()*6,99,4);
-            p.setColor(ink);c.drawCircle(cx,cy,6,p);txt(c,time(other),250,278,22,muted,numbers,140);
+            p.setColor(ink);c.drawCircle(cx,cy,6,p);p.setShader(null);txt(c,time(other),250,278,22,muted,numbers,140);
         }else if(style==2){
             txt(c,"所选时区",140,106,17,muted,regular,200);txt(c,"本地",368,106,17,muted,regular,200);
             timeText(c,time(other),140,208,79,208);timeText(c,time(local),368,208,79,208);
-            line(c,254,92,254,278,color("plate"),2);
+            themedLine(c,254,92,254,278,color("plate"),2,54);
             txt(c,other.format(FMT_SHORT_DATE),140,258,21,muted,regular,205);
             txt(c,local.format(FMT_SHORT_DATE),368,258,21,muted,regular,205);
             long minutes=(other.getOffset().getTotalSeconds()-local.getOffset().getTotalSeconds())/60;
             txt(c,minutes==0?"与本地同一时刻":"比本地"+(minutes>0?"快 ":"慢 ")+Math.abs(minutes)/60+"小时"+(Math.abs(minutes)%60==0?"":Math.abs(minutes)%60+"分"),250,313,20,ink,regular,430);
         }else{
             RectF orbit=new RectF(115,67,385,337);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(4);p.setColor(color("plate"));c.drawOval(orbit,p);
-            p.setColor(muted);c.drawArc(orbit,180,180,false,p);p.setStyle(Paint.Style.FILL);
-            float hour=other.getHour()+other.getMinute()/60f;double a=Math.toRadians(hour*15+90);
+            WorldDaylight.Times daylight=WorldDaylight.forTime(other,null);
+            LocalTime otherTime=other.toLocalTime();
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(4);themeColor(color("plate"),52,orbit.left,orbit.top,orbit.right,orbit.bottom);c.drawOval(orbit,p);
+            float sunriseAngle=daylight.sunrise.toSecondOfDay()/240f;
+            float sunsetAngle=daylight.sunset.toSecondOfDay()/240f;
+            themeColor(muted,178,orbit.left,orbit.top,orbit.right,orbit.bottom);
+            c.drawArc(orbit,90+sunriseAngle,sunsetAngle-sunriseAngle,false,p);p.setStyle(Paint.Style.FILL);
+            double a=Math.toRadians(otherTime.toSecondOfDay()/240f+90);
             float x=250+(float)Math.cos(a)*135,y=202+(float)Math.sin(a)*135;
-            p.setColor(ink);inkShader(x-8,y-8,x+8,y+8);c.drawCircle(x,y,8,p);p.setShader(null);
+            p.setColor(ink);c.drawCircle(x,y,8,p);p.setShader(null);
             timeText(c,time(other),250,217,76,249);
-            txt(c,hour>=6&&hour<18?"日间 · 06—18 时":"夜间 · 18—06 时",250,255,18,muted,regular,240);
+            boolean day=daylight.contains(otherTime);
+            String period=day?"日间 · "+daylightLabel(daylight.sunrise,daylight.sunset)
+                :"夜间 · "+daylightLabel(daylight.sunset,daylight.sunrise);
+            txt(c,period+(daylight==WorldDaylight.DEFAULT?" · 默认":""),250,255,18,muted,regular,240);
             txt(c,"12",250,91,14,muted,regular,30);txt(c,"00",250,320,14,muted,regular,30);
         }
         foot(c,other.format(FMT_WORLD));
     }
+    private String daylightLabel(LocalTime start,LocalTime end){return start.format(FMT_24)+"–"+end.format(FMT_24);}
     private void worldBands(Canvas c,String city,ZonedDateTime other,ZonedDateTime local){
-        worldBand(c,city,other,119);
-        line(c,55,177,445,177,color("plate"),1);
-        worldBand(c,"本地",local,267);
-        txt(c,"日间 06–18 时",250,344,20,muted,regular,400);
+        WorldDaylight.Times otherDay=WorldDaylight.forTime(other,null);
+        WorldDaylight.Times localDay=WorldDaylight.forTime(local,DeskData.weather);
+        worldBand(c,city,other,119,otherDay);
+        themedLine(c,55,186,445,186,color("plate"),1,54);
+        worldBand(c,"本地",local,267,localDay);
     }
-    private void worldBand(Canvas c,String name,ZonedDateTime time,float y){
+    private void worldBand(Canvas c,String name,ZonedDateTime time,float y,WorldDaylight.Times daylight){
         textLeft(c,name,55,y-55,25,ink,bold,181);
         textLeft(c,time.format(FMT_WORLD),55,y-25,17,muted,regular,214);
         timeText(c,time(time),373,y-24,56,147);
-        float marker=dayBand(c,55,445,y,time,true);
-        line(c,marker,y-15,marker,y+9,ink,2);
-        dot(c,marker,y-12,5);
+        float marker=dayBand(c,55,445,y,time,true,daylight);
+        dayMarker(c,55,445,marker,y-15,y+9,y-12,5);
+        String label="日间 "+daylightLabel(daylight.sunrise,daylight.sunset);
+        txt(c,label+(daylight==WorldDaylight.DEFAULT?" · 默认":""),250,y+57,19,muted,regular,400);
     }
-    private float dayBand(Canvas c,float left,float right,float y,ZonedDateTime time,boolean h24){
+    private float dayBand(Canvas c,float left,float right,float y,ZonedDateTime time,boolean h24,WorldDaylight.Times daylight){
         float width=right-left;
-        fill(c,left,y-4,right,y+4,4,color("plate"));
-        fill(c,left+width*.25f,y-4,left+width*.75f,y+4,4,softInk(99));
+        themedRect(c,left,y-4,right,y+4,4,color("plate"),48);
+        float sunrise=left+width*daylight.sunrise.toSecondOfDay()/86400f;
+        float sunset=left+width*daylight.sunset.toSecondOfDay()/86400f;
+        p.setStyle(Paint.Style.FILL);themeColor(softInk(99),255,left,y,right,y);
+        c.drawRoundRect(sunrise,y-4,sunset,y+4,4,4,p);
         for(int i=0;i<=4;i++){
             float x=left+width*i/4;
-            line(c,x,y+5,x,y+10,muted,1.3f);
+            themeColor(muted,150,left,y,right,y);strokeLine(c,x,y+5,x,y+10,1.3f);p.setShader(null);
             String label=h24?String.format(Locale.ROOT,"%02d",i*6)
                 :i==0||i==4?"午夜":i==1?"上午6时":i==2?"正午":"下午6时";
             txt(c,label,x,y+32,16,muted,regular,74);
         }
         return left+width*time.toLocalTime().toSecondOfDay()/86400f;
     }
-    private void worldHand(Canvas c,float cx,float cy,float angle,float length,float width){
-        double a=Math.toRadians(angle);inkShader(cx-length,cy-length,cx+length,cy+length);
-        line(c,cx,cy,cx+(float)Math.sin(a)*length,cy-(float)Math.cos(a)*length,ink,width);p.setShader(null);
+    private void dayMarker(Canvas c,float left,float right,float x,float top,float bottom,float dotY,float radius){
+        themeColor(ink,255,left,dotY,right,dotY);
+        strokeLine(c,x,top,x,bottom,2);
+        c.drawCircle(x,dotY,radius,p);p.setShader(null);
     }
-    private void month(Canvas c,ZonedDateTime now){if(variant()>0){dateVariant(c,now,variant());return;}boolean combined=component.bool("showAgenda",true);float center=combined?160:250,step=combined?41:62,left=combined?37:65;txt(c,now.format(FMT_MONTH),center,48,22,ink,bold,combined?280:430);LocalDate first=now.toLocalDate().withDayOfMonth(1);int offset=first.getDayOfWeek().getValue()-1;for(int i=0;i<7;i++)txt(c,WEEKDAYS[i],left+i*step,97,17,muted,regular,step-5);for(int day=1;day<=first.lengthOfMonth();day++){int pos=offset+day-1;float x=left+(pos%7)*step,y=141+(pos/7)*38;if(day==now.getDayOfMonth()){p.setColor(ink);inkShader(x-18,y-24,x+18,y+12);c.drawCircle(x,y-7,combined?15:18,p);p.setShader(null);}txt(c,""+day,x,y,combined?18:20,day==now.getDayOfMonth()?color("background"):muted,bold,step-5);}if(!combined)return;line(c,318,44,318,354,color("plate"),2);txt(c,"今日事项",405,78,20,ink,bold,154);String[] rows=privateAgenda(true).split("\n");for(int i=0;i<Math.min(3,rows.length);i++){String[] parts=rows[i].split("  ",2);float y=132+i*76;txt(c,parts[0],405,y,18,muted,regular,150);if(parts.length>1)txt(c,shorten(parts[1],12),405,y+28,20,ink,regular,150);}if(rows.length>3)txt(c,"另有 "+(rows.length-3)+" 项",405,355,15,muted,regular,150);}
+    private void worldHand(Canvas c,float cx,float cy,float angle,float length,float width){
+        double a=Math.toRadians(angle);
+        line(c,cx,cy,cx+(float)Math.sin(a)*length,cy-(float)Math.cos(a)*length,ink,width);
+    }
+    private void month(Canvas c,ZonedDateTime now){if(variant()>0){dateVariant(c,now,variant());return;}boolean combined=component.bool("showAgenda",true);float center=combined?160:250,step=combined?41:62,left=combined?37:65;txt(c,now.format(FMT_MONTH),center,48,22,ink,bold,combined?280:430);LocalDate first=now.toLocalDate().withDayOfMonth(1);int offset=first.getDayOfWeek().getValue()-1;for(int i=0;i<7;i++)txt(c,WEEKDAYS[i],left+i*step,97,17,muted,regular,step-5);for(int day=1;day<=first.lengthOfMonth();day++){int pos=offset+day-1;float x=left+(pos%7)*step,y=141+(pos/7)*38;if(day==now.getDayOfMonth()){p.setColor(ink);themeShader(x-18,y-24,x+18,y+12);c.drawCircle(x,y-7,combined?15:18,p);p.setShader(null);}txt(c,""+day,x,y,combined?18:20,day==now.getDayOfMonth()?color("background"):muted,bold,step-5);}if(!combined)return;themedLine(c,318,44,318,354,color("plate"),2,54);txt(c,"今日事项",405,78,20,ink,bold,154);String[] rows=privateAgenda(true).split("\n");for(int i=0;i<Math.min(3,rows.length);i++){String[] parts=rows[i].split("  ",2);float y=132+i*76;txt(c,parts[0],405,y,18,muted,regular,150);if(parts.length>1)txt(c,shorten(parts[1],12),405,y+28,20,ink,regular,150);}if(rows.length>3)txt(c,"另有 "+(rows.length-3)+" 项",405,355,15,muted,regular,150);}
     private void todo(Canvas c){
         if(!demo&&!todoAllowed()){header(c,"待办");txt(c,"解锁查看待办",250,215,27,muted,regular,420);return;}
         if(todoStore!=null){savedTodo(c);return;}
@@ -830,7 +905,7 @@ public final class ClockFace extends View {
         }else if(style==4){
             textLeft(c,"待完成  "+pending,57,64,23,ink,bold,186);
             textLeft(c,"已完成  "+completed,266,64,23,muted,bold,184);
-            line(c,250,47,250,327,color("plate"),1.5f);
+            themedLine(c,250,47,250,327,color("plate"),1.5f,54);
         }else header(c,style==1?"待办卡片":style==2?"行动清单":"待办");
         if(ordered.length==0){txt(c,"暂无待办",250,204,30,ink,regular,420);txt(c,"在组件编辑中添加",250,348,18,muted,regular,400);return;}
         if(style==3)todoProgress(c,completed,ordered.length);
@@ -908,26 +983,26 @@ public final class ClockFace extends View {
         float track = layout.viewport(), thumb = Math.max(12, track * track / (track + maxOffset));
         float x = layout.right + 8, top = layout.top + (track - thumb) * offset / maxOffset;
         line(c, x, layout.top, x, TodoLayout.BOTTOM, color("plate"), 2);
-        line(c, x, top, x, top + thumb, muted, 3);
+        themedLine(c, x, top, x, top + thumb, muted, 3, 160);
     }
 
     private void todoProgress(Canvas c,int completed,int count){
         float cx=121,cy=187,r=61;
         float fraction = count == 0 ? 0f : (float) completed / count;
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(6);p.setColor(color("plate"));
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(6);themeColor(color("plate"),52,cx-r,cy-r,cx+r,cy+r);
         c.drawCircle(cx,cy,r,p);
-        p.setColor(ink);inkShader(cx-r,cy-r,cx+r,cy+r);
+        p.setColor(ink);themeShader(cx-r,cy-r,cx+r,cy+r);
         c.drawArc(cx-r,cy-r,cx+r,cy+r,-90,360f*fraction,false,p);
         p.setShader(null);p.setStyle(Paint.Style.FILL);
         timeText(c,Math.round(100f*fraction)+"%",cx,203,44,107);
         txt(c,completed+" / "+count+" 已完成",cx,289,18,muted,regular,151);
-        line(c,204,78,204,326,color("plate"),1.5f);
+        themedLine(c,204,78,204,326,color("plate"),1.5f,54);
     }
     private void todoItem(Canvas c,String value,boolean done,boolean managed,int style,int index,float x,float top,float width){
         int foreground=done?muted:ink;
         float y=top+30;
         if(style==1){
-            fill(c,x,top+3,x+width,top+77,5,softInk(done?17:29));
+            themedRect(c,x,top+3,x+width,top+77,5,softInk(done?17:29),255);
             todoMark(c,x+10,top+11,done,15);
             p.setStrikeThruText(done);
             todoCardText(c,value,x+34,top+33,width-46,foreground);
@@ -938,9 +1013,9 @@ public final class ClockFace extends View {
             p.setStrikeThruText(done);
             textLeft(c,shorten(value,26),x+86,y,25,foreground,regular,width-100);
             p.setStrikeThruText(false);
-            line(c,x+84,y+16,x+width-9,y+16,color("plate"),1);
+            themedLine(c,x+84,y+16,x+width-9,y+16,color("plate"),1,54);
         }else if(style==4){
-            fill(c,x,top+2,x+width,top+44,5,softInk(done?11:24));
+            themedRect(c,x,top+2,x+width,top+44,5,softInk(done?11:24),255);
             if(done||managed)todoMark(c,x+10,top+15,done,14);
             else dot(c,x+17,top+23,3.5f);
             p.setStrikeThruText(done);
@@ -955,11 +1030,13 @@ public final class ClockFace extends View {
         }
     }
     private void todoMark(Canvas c,float x,float y,boolean done,float size){
-        outline(c,x,y,x+size,y+size,3,done?muted:ink,1.5f);
+        themeColor(done?muted:ink,done?160:255,x,y,x+size,y+size);
+        strokeOutline(c,x,y,x+size,y+size,3,1.5f);
         if(done){
-            line(c,x+size*.18f,y+size*.49f,x+size*.43f,y+size*.74f,muted,1.7f);
-            line(c,x+size*.43f,y+size*.74f,x+size*.87f,y+size*.26f,muted,1.7f);
+            strokeLine(c,x+size*.18f,y+size*.49f,x+size*.43f,y+size*.74f,1.7f);
+            strokeLine(c,x+size*.43f,y+size*.74f,x+size*.87f,y+size*.26f,1.7f);
         }
+        p.setShader(null);
     }
     private void todoCardText(Canvas c,String value,float x,float y,float width,int color){
         p.setTypeface(regular);p.setTextSize(20);
@@ -1010,7 +1087,7 @@ public final class ClockFace extends View {
             String[] readings={temperature(temp),temperature(feels),humidity<0?"—":humidity+"%"};
             for(int i=0;i<3;i++){
                 float y=95+i*68;
-                fill(c,55,y,445,y+58,4,softInk(i==0?27:12));
+                themedRect(c,55,y,445,y+58,4,softInk(i==0?27:12),255);
                 textLeft(c,labels[i],71,y+37,23,muted,regular,244);
                 txt(c,readings[i],383,y+41,39,ink,numbers,105);
             }
@@ -1018,8 +1095,10 @@ public final class ClockFace extends View {
         }else if(style==3){
             timeText(c,temperature(temp),250,177,102,420);
             txt(c,condition+" · "+apparent,250,219,21,muted,regular,420);
-            line(c,62,266,438,266,color("plate"),5);
-            for(int i=0;i<=10;i++)line(c,62+i*37.6f,258,62+i*37.6f,274,muted,1);
+            themedLine(c,62,266,438,266,color("plate"),5,68);
+            themeColor(muted,154,62,266,438,266);
+            for(int i=0;i<=10;i++)strokeLine(c,62+i*37.6f,258,62+i*37.6f,274,1);
+            p.setShader(null);
             if(Double.isFinite(high)&&Double.isFinite(low)&&Double.isFinite(temp)){
                 float fraction=high==low?.5f:(float)Math.max(0,Math.min(1,(temp-low)/(high-low)));
                 primaryRect(c,54+376*fraction,253,70+376*fraction,279,7);
@@ -1029,7 +1108,7 @@ public final class ClockFace extends View {
         }else{
             humidityDrop(c,humidity);
             txt(c,"相对湿度",149,319,20,muted,regular,182);
-            line(c,252,99,252,323,color("plate"),1.5f);
+            themedLine(c,252,99,252,323,color("plate"),1.5f,54);
             textLeft(c,condition,272,129,28,ink,bold,176);
             textLeft(c,temperature(temp),272,203,79,ink,numbers,175);
             textLeft(c,apparent,272,241,23,muted,regular,175);
@@ -1046,31 +1125,20 @@ public final class ClockFace extends View {
         iconPath.cubicTo(219,172,165,121,149,91);iconPath.close();
         int save=c.save();
         c.clipPath(iconPath);
-        fill(c,78,90,220,289,0,softInk(16));
+        themedRect(c,78,90,220,289,0,softInk(16),255);
         if(humidity>=0){
             float waterline=289-198*Math.min(100,humidity)/100f;
-            fill(c,78,waterline,220,289,0,softInk(63));
-            line(c,78,waterline,220,waterline,ink,1.5f);
+            themedRect(c,78,waterline,220,289,0,softInk(63),255);
+            themedLine(c,78,waterline,220,waterline,ink,1.5f,255);
         }
         c.restoreToCount(save);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);p.setColor(muted);
-        c.drawPath(iconPath,p);p.setStyle(Paint.Style.FILL);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);themeColor(muted,176,78,90,220,289);
+        c.drawPath(iconPath,p);p.setStyle(Paint.Style.FILL);p.setShader(null);
         txt(c,humidity<0?"—":humidity+"%",149,232,44,ink,numbers,117);
     }
     private void weatherIcon(Canvas c,float x,float y,int code){
-        if(code<0){txt(c,"?",x,y+20,80,muted,numbers,140);return;}
-        if(code<=3){
-            float sx=code==0?x:x-22,sy=code==0?y:y-23;
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(4);p.setColor(ink);inkShader(x-80,y-80,x+80,y+80);c.drawCircle(sx,sy,29,p);
-            for(int i=0;i<8;i++){double a=i*Math.PI/4;line(c,sx+(float)Math.cos(a)*42,sy+(float)Math.sin(a)*42,sx+(float)Math.cos(a)*54,sy+(float)Math.sin(a)*54,ink,3);}p.setShader(null);p.setStyle(Paint.Style.FILL);
-            if(code==0)return;
-        }
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(4);p.setColor(ink);inkShader(x-80,y-65,x+80,y+65);
-        iconPath.reset();iconPath.moveTo(x-49,y+26);iconPath.cubicTo(x-83,y+22,x-69,y-25,x-40,y-18);iconPath.cubicTo(x-33,y-62,x+25,y-60,x+34,y-18);iconPath.cubicTo(x+72,y-28,x+82,y+25,x+48,y+26);iconPath.close();c.drawPath(iconPath,p);p.setShader(null);p.setStyle(Paint.Style.FILL);
-        if(code>=45&&code<=48){for(int i=0;i<2;i++)line(c,x-49,y+43+i*14,x+49,y+43+i*14,muted,3);}
-        else if(code>=71&&code<=77||code>=85&&code<=86){for(int i=0;i<3;i++){float sx=x-34+i*34;line(c,sx-5,y+48,sx+5,y+48,ink,2);line(c,sx,y+43,sx,y+53,ink,2);}}
-        else if(code>=95){line(c,x+1,y+35,x-16,y+59,ink,4);line(c,x-16,y+59,x+8,y+59,ink,4);line(c,x+8,y+59,x-3,y+78,ink,4);}
-        else if(code>=51){for(int i=0;i<3;i++)line(c,x-33+i*34,y+43,x-40+i*34,y+58,ink,3);}
+        weatherArtwork.palette(ink,muted,color("plate"),gradient);
+        weatherArtwork.draw(c,x,y,1f,code);
     }
     private boolean effectsEnabled(){return motionActive&&prefs.getBoolean("motion",true)&&ValueAnimator.areAnimatorsEnabled()&&!night();}
     boolean chargingAnimationForCheck(){return (demo||DeskData.batteryCharging)&&(demo||!DeskData.batteryFull)&&effectsEnabled();}
@@ -1078,144 +1146,305 @@ public final class ClockFace extends View {
     private void batteryVariant(Canvas c){
         int level=demo?76:Math.max(0,Math.min(100,DeskData.batteryLevel));
         boolean full=!demo&&DeskData.batteryFull,charging=demo||DeskData.batteryCharging;
-        int accent=level<=20&&!dark?0xffff987d:ink,style=variant();
+        int warning=level<=20&&!dark?0xffff987d:ink;
+        int accent=gradient>0?ink:warning,style=variant();
         String status=full?"已充满":charging?"正在充电":DeskData.batteryPlugged?"已连接电源":"电池供电";
         header(c,"电量");
         boolean animate=charging&&!full&&effectsEnabled()&&level>0;
         float phase=animate?wallTime()%2400L/2400f:0;
         if(style==4){
-            batteryRuler(c,level,accent,status,animate,phase);
+            batteryRuler(c,level,accent,warning,status,animate,phase);
             return;
         }
         float fillLeft=50,fillRight=450,fillY=277;
         if(style==1){
-            outline(c,59,101,428,209,19,muted,3);line(c,442,133,442,177,muted,7);
-            energyRect(c,69,111,69+349*level/100f,199,11,accent);
+            themeColor(muted,176,59,101,442,209);
+            strokeOutline(c,59,101,428,209,19,3);strokeLine(c,442,133,442,177,7);p.setShader(null);
+            themedRect(c,69,111,69+349*level/100f,199,11,accent,255);
             txt(c,level+"%",250,292,76,accent,numbers,420);
             fillLeft=69;fillRight=418;fillY=155;
         }else if(style==2){
             txt(c,level+"%",250,233,153,accent,numbers,430);
-            line(c,50,277,450,277,color("plate"),5);
-            if(level>0){if(accent==ink)inkShader(50,272,450,282);line(c,50,277,50+4*level,277,accent,5);p.setShader(null);}
+            themedLine(c,50,277,450,277,color("plate"),5,60);
+            if(level>0){themeColor(accent,255,50,277,450,277);strokeLine(c,50,277,50+4*level,277,5);p.setShader(null);}
         }else{
             for(int i=0;i<10;i++){
                 float x=55+i%5*42,y=121+i/5*64;
-                fill(c,x,y,x+31,y+49,5,color("plate"));
+                themedRect(c,x,y,x+31,y+49,5,color("plate"),52);
                 float amount=Math.max(0,Math.min(1,level/10f-i));
-                if(amount>0)energyRect(c,x,y+49*(1-amount),x+31,y+49,5,accent);
+                if(amount>0)themedRect(c,x,y+49*(1-amount),x+31,y+49,5,accent,255);
             }
             txt(c,level+"%",361,210,76,accent,numbers,181);
             fillLeft=55;fillRight=266;fillY=269;
         }
-        txt(c,(charging&&!full?"ϟ  ":"")+status,250,329,24,accent,bold,430);
+        txt(c,(charging&&!full?"ϟ  ":"")+status,250,329,24,warning,bold,430);
         foot(c,demo?"充电效果预览":String.format(Locale.ROOT,"电池温度 %.1f°C",DeskData.batteryTempTenths/10f));
         if(animate){
             float x=fillLeft+(fillRight-fillLeft)*level/100f*phase;
-            p.setColor(accent);c.drawCircle(x,fillY,style==1?5:3,p);animateEffect(33);
+            themeColor(accent,255,fillLeft,fillY,fillRight,fillY);
+            c.drawCircle(x,fillY,style==1?5:3,p);p.setShader(null);animateEffect(33);
         }
     }
-    private void batteryRuler(Canvas c,int level,int accent,String status,boolean animate,float phase){
+    private void batteryRuler(Canvas c,int level,int accent,int warning,String status,boolean animate,float phase){
         float top=89,bottom=317,marker=bottom-(bottom-top)*level/100f;
-        fill(c,107,top,123,bottom,8,color("plate"));
-        if(level>0)energyRect(c,107,marker,123,bottom,8,accent);
+        themedRect(c,107,top,123,bottom,8,color("plate"),55);
+        if(level>0){themeColor(accent,255,115,top,115,bottom);c.drawRoundRect(107,marker,123,bottom,8,8,p);p.setShader(null);}
         for(int i=0;i<=20;i++){
             float y=bottom-i*(bottom-top)/20;
-            line(c,130,y,i%5==0?151:140,y,muted,i%5==0?2:1);
+            themeColor(muted,150,115,top,115,bottom);strokeLine(c,130,y,i%5==0?151:140,y,i%5==0?2:1);p.setShader(null);
             if(i%5==0)txt(c,Integer.toString(i*5),174,y+6,17,muted,numbers,38);
         }
-        fill(c,93,marker-2,129,marker+2,2,accent);
+        themeColor(accent,255,115,top,115,bottom);c.drawRoundRect(93,marker-2,129,marker+2,2,2,p);p.setShader(null);
         if(animate&&bottom-marker>10){
             p.setColor(Color.BLACK);c.drawCircle(115,bottom-5-(bottom-marker-10)*phase,3,p);
             animateEffect(33);
         }
-        line(c,214,91,214,317,color("plate"),1.5f);
+        themedLine(c,214,91,214,317,color("plate"),1.5f,54);
         textLeft(c,level+"%",238,211,115,accent,numbers,206);
-        textLeft(c,status,240,256,25,ink,bold,200);
+        textLeft(c,status,240,256,25,gradient>0?warning:ink,bold,200);
         textLeft(c,demo?"充电效果预览":String.format(Locale.ROOT,"电池温度 %.1f°C",DeskData.batteryTempTenths/10f),240,300,19,muted,regular,204);
     }
-    private void energyRect(Canvas c,float l,float t,float r,float b,float radius,int accent){
-        if(r<=l)return;p.setStyle(Paint.Style.FILL);p.setColor(accent);if(accent==ink)inkShader(l,t,r,b);
-        c.drawRoundRect(l,t,r,b,radius,radius,p);p.setShader(null);
+    private void battery(Canvas c){
+        if(variant()>0){batteryVariant(c);return;}
+        int level=demo?76:DeskData.batteryLevel;
+        boolean full=!demo&&DeskData.batteryFull,charging=demo||DeskData.batteryCharging,plugged=demo||DeskData.batteryPlugged;
+        int warning=level<=20&&!dark?0xffff987d:ink;
+        int accent=gradient>0?ink:warning;
+        header(c,"电量");
+        batteryArc.set(54,74,306,326);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeWidth(7);
+        themeColor((muted&0xffffff)|0x46000000,70,batteryArc.left,batteryArc.top,batteryArc.right,batteryArc.bottom);
+        c.drawArc(batteryArc,135,270,false,p);
+        if(level>0){
+            themeColor(accent,255,batteryArc.left,batteryArc.top,batteryArc.right,batteryArc.bottom);
+            c.drawArc(batteryArc,135,270*level/100f,false,p);
+        }
+        p.setShader(null);p.setStyle(Paint.Style.FILL);
+        txt(c,String.valueOf(level),172,222,84,accent,numbers,195);txt(c,"%",250,220,23,muted,regular,35);
+        String status=full?"已充满":charging?"正在充电":plugged?"已连接电源":"电池供电";
+        txt(c,status,384,173,25,warning,bold,170);
+        txt(c,full?"电量已就绪":charging?"能量补充中":plugged?"当前未充电":level<=20?"建议连接充电器":"可继续使用",384,210,18,muted,regular,170);
+        float bx=360,by=247;
+        themeColor(accent,255,bx,by,bx+46,by+23);
+        strokeOutline(c,bx,by,bx+43,by+23,5,2);
+        strokeLine(c,bx+46,by+8,bx+46,by+15,3);
+        if(level>0)c.drawRoundRect(bx+4,by+4,bx+4+35*level/100f,by+19,2,2,p);
+        p.setShader(null);
+        if(charging){
+            iconPath.reset();iconPath.moveTo(184,264);iconPath.lineTo(169,285);iconPath.lineTo(180,285);
+            iconPath.lineTo(175,300);iconPath.lineTo(193,277);iconPath.lineTo(182,277);iconPath.close();
+            themeColor(accent,255,165,260,196,302);c.drawPath(iconPath,p);p.setShader(null);
+            if(effectsEnabled()&&!full){
+                float angle=-90+360*(wallTime()%2400L/2400f);
+                p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.5f);
+                themeColor((accent&0xffffff)|0xaa000000,170,batteryArc.left,batteryArc.top,batteryArc.right,batteryArc.bottom);
+                c.drawArc(batteryArc,angle-20,20,false,p);p.setStyle(Paint.Style.FILL);
+                double rad=Math.toRadians(angle);
+                c.drawCircle(180+(float)Math.cos(rad)*126,200+(float)Math.sin(rad)*126,4,p);
+                p.setShader(null);animateEffect(33);
+            }
+        }
     }
-    private void battery(Canvas c){if(variant()>0){batteryVariant(c);return;}int level=demo?76:DeskData.batteryLevel;boolean full=!demo&&DeskData.batteryFull,charging=demo||DeskData.batteryCharging,plugged=demo||DeskData.batteryPlugged;int accent=level<=20&&!dark?0xffff987d:ink;boolean useGrad=accent==ink;header(c,"电量");batteryArc.set(64,84,296,316);p.setShader(null);p.setStyle(Paint.Style.STROKE);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeWidth(7);p.setColor((muted&0xffffff)|0x46000000);c.drawArc(batteryArc,135,270,false,p);p.setColor(accent);if(level>0){if(useGrad)inkShader(batteryArc.left,batteryArc.top,batteryArc.right,batteryArc.bottom);c.drawArc(batteryArc,135,270*level/100f,false,p);p.setShader(null);}p.setStyle(Paint.Style.FILL);txt(c,String.valueOf(level),172,222,84,accent,numbers,195);txt(c,"%",250,220,23,muted,regular,35);
-        String status=full?"已充满":charging?"正在充电":plugged?"已连接电源":"电池供电";txt(c,status,384,173,25,accent,bold,170);txt(c,full?"电量已就绪":charging?"能量补充中":plugged?"当前未充电":level<=20?"建议连接充电器":"可继续使用",384,210,18,muted,regular,170);
-        float bx=360,by=247;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2);p.setColor(accent);if(useGrad)inkShader(bx,by,bx+46,by+23);c.drawRoundRect(bx,by,bx+43,by+23,5,5,p);line(c,bx+46,by+8,bx+46,by+15,accent,3);p.setStyle(Paint.Style.FILL);if(level>0){p.setColor(accent);c.drawRoundRect(bx+4,by+4,bx+4+35*level/100f,by+19,2,2,p);}p.setShader(null);if(charging){iconPath.reset();iconPath.moveTo(184,264);iconPath.lineTo(169,285);iconPath.lineTo(180,285);iconPath.lineTo(175,300);iconPath.lineTo(193,277);iconPath.lineTo(182,277);iconPath.close();p.setColor(accent);if(useGrad)inkShader(165,260,196,302);c.drawPath(iconPath,p);p.setShader(null);if(effectsEnabled()&&!full){float phase=wallTime()%2400L/2400f,angle=-90+360*phase;batteryArc.set(54,74,306,326);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.5f);p.setColor((accent&0xffffff)|0xaa000000);if(useGrad)inkShader(batteryArc.left,batteryArc.top,batteryArc.right,batteryArc.bottom);c.drawArc(batteryArc,angle-20,20,false,p);p.setStyle(Paint.Style.FILL);double rad=Math.toRadians(angle);c.drawCircle(180+(float)Math.cos(rad)*126,200+(float)Math.sin(rad)*126,4,p);p.setShader(null);animateEffect(33);}}
-        foot(c,demo?"充电动画预览":full?"电量 100%":String.format(Locale.ROOT,"电池温度 %.1f°C",DeskData.batteryTempTenths/10f));
-    }
-    private void music(Canvas c){MediaController controller=DeskData.media;MediaMetadata meta=controller==null||!demo&&!DeskData.musicAllowed?null:controller.getMetadata();PlaybackState state=controller==null?null:controller.getPlaybackState();boolean available=demo||DeskData.musicAllowed&&meta!=null,playing=demo||state!=null&&state.getState()==PlaybackState.STATE_PLAYING;long actions=demo?~0L:state==null?0:state.getActions();Bitmap art=demo||meta==null?null:meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);if(art==null&&meta!=null&&!demo)art=meta.getBitmap(MediaMetadata.METADATA_KEY_ART);
-        String title=demo?"夜行 · Nightfall":meta==null?(DeskData.musicAllowed?"暂无播放":"音乐未授权"):meta.getString(MediaMetadata.METADATA_KEY_TITLE),artist=demo?"音乐组件预览":meta==null?(DeskData.musicAllowed?"在播放器中选择音乐":"在设置中开启音乐访问"):meta.getString(MediaMetadata.METADATA_KEY_ARTIST);
-        long duration=demo?213000:meta==null?0:meta.getLong(MediaMetadata.METADATA_KEY_DURATION),pos=demo?74000:state==null?0:Math.max(0,state.getPosition());if(!demo&&playing&&state!=null&&state.getLastPositionUpdateTime()>0)pos+=(long)(Math.max(0,SystemClock.elapsedRealtime()-state.getLastPositionUpdateTime())*Math.max(0,state.getPlaybackSpeed()));pos=Math.max(0,duration>0?Math.min(pos,duration):pos);
-        musicVisual(c,art,title,artist,available,playing,duration>0?pos/(float)duration:Float.NaN);
-        line(c,54,202,446,202,(muted&0xffffff)|0x60000000,3);if(duration>0){float end=54+392*pos/(float)duration;inkShader(54,190,446,214);line(c,54,202,end,202,ink,3);p.setColor(ink);c.drawCircle(end,202,4,p);p.setShader(null);}txt(c,available?MediaControls.time(pos):"—:—",82,237,16,muted,regular,90);txt(c,duration>0?MediaControls.time(duration):"—:—",418,237,16,muted,regular,90);
+    private void music(Canvas c) {
+        MediaController controller = demo || !DeskData.musicAllowed ? null : DeskData.media;
+        MediaMetadata meta = controller == null ? null : controller.getMetadata();
+        PlaybackState state = controller == null ? null : controller.getPlaybackState();
+        boolean available = demo || meta != null;
+        boolean playing = demo || state != null && state.getState() == PlaybackState.STATE_PLAYING;
+        long actions = demo ? ~0L : state == null ? 0 : state.getActions();
+        Bitmap art = meta == null ? null : meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+        if (art == null && meta != null) art = meta.getBitmap(MediaMetadata.METADATA_KEY_ART);
+        String title = demo ? "夜行 · Nightfall" : meta != null ? MusicLyrics.title(meta)
+                : DeskData.musicAllowed ? "暂无播放" : "音乐未授权";
+        String artist = demo ? "音乐组件预览" : meta != null ? meta.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                : DeskData.musicAllowed ? "在播放器中选择音乐" : "在设置中开启音乐访问";
+        long duration = demo ? 213000 : meta == null ? 0 : meta.getLong(MediaMetadata.METADATA_KEY_DURATION);
+        long position = state == null ? -1 : state.getPosition();
+        float speed = state == null ? 0 : state.getPlaybackSpeed();
+        long update = state == null ? 0 : state.getLastPositionUpdateTime();
+        boolean tracking = playing && position >= 0 && update > 0 && Float.isFinite(speed) && speed > 0;
+        long pos = demo ? 74000 + (effectsEnabled() ? (testTime >= 0 ? testTime : SystemClock.uptimeMillis()) % 18000 : 0)
+                : Math.max(0, position);
+        if (tracking) pos += (long) (Math.max(0, SystemClock.elapsedRealtime() - update) * speed);
+        if (duration > 0) pos = Math.min(pos, duration);
+
+        String lyric = "", nextLyric = "";
+        if (component.bool(MusicLyrics.SHOW, false)) {
+            LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : position >= 0 ? musicLyrics(controller, meta) : null;
+            if (timeline != null) {
+                int index = timeline.indexAt(pos);
+                lyric = timeline.lineAt(index);
+                float density = getResources().getDisplayMetrics().density;
+                RectF bounds = cells[drawingSlot];
+                if (!lyric.isEmpty() && bounds.width() >= 480 * density && bounds.height() >= 290 * density) {
+                    nextLyric = timeline.lineAt(index + 1);
+                }
+                long next = timeline.nextTime(index);
+                if (tracking && next != Long.MAX_VALUE && (duration <= 0 || next <= duration)) {
+                    long delay = Math.max(16L, (long) Math.ceil((next - pos) / (double) speed));
+                    if (delay <= 60000L) nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
+                }
+            }
+        }
+        musicVisual(c, art, title, artist, available, playing, pos, duration, lyric, nextLyric);
+        themedLine(c,54,202,446,202,(muted&0xffffff)|0x60000000,3,96);
+        if(duration>0){float end=54+392*pos/(float)duration;themeColor(ink,255,54,202,446,202);strokeLine(c,54,202,end,202,3);c.drawCircle(end,202,4,p);p.setShader(null);}
+        txt(c,available?MediaControls.time(pos):"—:—",82,237,16,muted,regular,90);txt(c,duration>0?MediaControls.time(duration):"—:—",418,237,16,muted,regular,90);
         for(int button=0;button<3;button++)musicButton(c,button,playing,available&&MediaControls.enabled(actions,playing,button));
     }
-    private void musicVisual(Canvas c,Bitmap art,String title,String artist,boolean available,boolean playing,float fraction){
-        int style=variant();String status=available?(playing?"正在播放":"已暂停"):"音乐";
-        if(style==0){
+
+    private LrcLyrics musicLyrics(MediaController controller, MediaMetadata meta) {
+        String key = MusicLyrics.key(controller, meta);
+        String source = key == null ? null : MusicLyrics.library(getContext()).getString(key, null);
+        if (!Objects.equals(lyricSource, source)) {
+            lyricSource = source;
+            lyrics = LrcLyrics.parse(source);
+        }
+        return lyrics;
+    }
+
+    private void updateLyricTick(long when) {
+        if (when != Long.MAX_VALUE && (testTime >= 0 || !motionActive || !isAttachedToWindow()
+                || getWindowVisibility() != VISIBLE || !isShown() || !getGlobalVisibleRect(visibleMusicRect))) {
+            when = Long.MAX_VALUE;
+        }
+        if (scheduledLyricAt == when || (scheduledLyricAt != Long.MAX_VALUE && when != Long.MAX_VALUE
+                && Math.abs(when - scheduledLyricAt) < 20L)) return;
+        handler.removeCallbacks(lyricTick);
+        scheduledLyricAt = when;
+        if (when != Long.MAX_VALUE) handler.postAtTime(lyricTick, when);
+    }
+
+    private void musicVisual(Canvas c, Bitmap art, String title, String artist, boolean available,
+                             boolean playing, long position, long duration, String lyric, String nextLyric) {
+        String style = ComponentStyles.selected(component);
+        String status = available ? (playing ? "正在播放" : "已暂停") : "音乐";
+        boolean liveMotion = effectsEnabled() && getWindowVisibility() == VISIBLE && isShown()
+                && getGlobalVisibleRect(visibleMusicRect);
+        float progress = duration > 0 ? position / (float) duration : Float.NaN;
+        if (musicArtwork == null) musicArtwork = new MusicArtwork();
+        if (style.equals("cover")) {
             coverArt(c,art,42,42,144,144,false);
-            txt(c,shorten(title,40),320,80,26,available?ink:muted,bold,290);
-            txt(c,shorten(artist,44),320,116,18,muted,regular,290);
-            txt(c,status,320,150,14,muted,regular,290);
-        }else if(style==1){
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f);
-            for(int r=40;r<=76;r+=6){p.setColor(r==76?muted:color("plate"));c.drawCircle(117,105,r,p);}p.setStyle(Paint.Style.FILL);
-            coverArt(c,art,84,72,150,138,true);
-            p.setColor(Color.BLACK);c.drawCircle(117,105,5,p);
-            line(c,179,37,198,44,muted,3);line(c,198,44,180,121,muted,3);line(c,180,121,170,129,ink,5);
-            txt(c,shorten(title,40),350,85,30,available?ink:muted,bold,247);
-            txt(c,shorten(artist,44),350,124,18,muted,regular,247);
-            txt(c,status,350,157,14,muted,regular,247);
-        }else if(style==2){
+            musicMetadata(c, title, artist, status, available, true, lyric, nextLyric);
+        } else if (style.equals("record")) {
+            musicArtwork.record(c, ComponentStyles.vectorArtwork(component), dark, ink, gradient, art, position, progress, effectsEnabled());
+            musicMetadata(c, title, artist, status, available, false, lyric, nextLyric);
+            if (available && playing && liveMotion) animateEffect(33);
+        } else if (style.equals("music_type")) {
             primaryRect(c,54,57,59,166,2);
             textLeft(c,shorten(title,43),75,121,59,available?ink:muted,Typeface.SERIF,365);
-            textLeft(c,shorten(artist,44),78,164,23,muted,regular,365);
-        }else if(style==3){
-            txt(c,shorten(title,50),250,61,31,available?ink:muted,bold,430);
-            txt(c,shorten(artist,60),250,94,18,muted,regular,430);
-            boolean moving=available&&playing&&effectsEnabled();float phase=moving?wallTime()%3200L/3200f:0;
-            for(int i=0;i<31;i++){
-                float wave=(float)(.5+.5*Math.sin(i*1.37+phase*Math.PI*2));
-                float height=available&&playing?12+wave*48:5;
-                primaryRect(c,52+i*13,149-height/2,58+i*13,149+height/2,3);
+            if (lyric.isEmpty()) textLeft(c,shorten(artist,44),78,164,23,muted,regular,365);
+            else {
+                musicLyric(c, lyric, 78, 161, 23, 365, true, true);
+                musicLyric(c, nextLyric, 78, 184, 17, 365, false, true);
             }
-            if(moving)animateEffect(80);
-        }else{
-            cassette(c,title,artist,fraction);
+        } else if (style.equals("spectrum")) {
+            txt(c, shorten(title, 50), 250, nextLyric.isEmpty() ? 45 : 34, 29, available ? ink : muted, bold, 430);
+            boolean enabled = !demo && MusicSpectrum.enabled(getContext(), prefs);
+            boolean active = available && playing && liveMotion && enabled;
+            if (musicSpectrum == null) musicSpectrum = new MusicSpectrum();
+            spectrumUsed = !demo;
+            float[] levels = demo ? MusicSpectrum.demoLevels() : musicSpectrum.levels(active);
+            String detail = demo ? "示例频谱" : available && playing && liveMotion && !enabled ? "播放中 · 频谱已关闭" : artist;
+            if (lyric.isEmpty()) {
+                String secondary = component.bool(MusicLyrics.SHOW, false) && artist != null && !artist.isEmpty()
+                        ? artist : detail;
+                txt(c, shorten(secondary, 60), 250, 72, 17, muted, regular, 430);
+            }
+            else {
+                musicLyric(c, lyric, 250, nextLyric.isEmpty() ? 72 : 57, 18, 430, true, false);
+                musicLyric(c, nextLyric, 250, 78, 15, 430, false, false);
+            }
+            musicArtwork.spectrum(c, levels, ink, gradient, dark);
+            if ((active && musicSpectrum.capturing()) || (liveMotion && musicSpectrum.moving())) animateEffect(48);
+        } else {
+            musicArtwork.cassette(c, ComponentStyles.vectorArtwork(component), dark, ink, gradient,
+                    available ? title : null, position, duration, progress, effectsEnabled());
+            musicMetadata(c, title, artist, status, available, false, lyric, nextLyric);
+            if (available && playing && liveMotion) animateEffect(33);
         }
     }
-    private void cassette(Canvas c,String title,String artist,float fraction){
-        outline(c,54,48,446,180,15,muted,2);
-        fill(c,62,57,438,108,6,softInk(26));
-        textLeft(c,shorten(title,36),77,81,25,ink,bold,345);
-        textLeft(c,shorten(artist,46),77,101,16,muted,regular,345);
-        fill(c,126,114,374,167,10,color("plate"));
-        line(c,154,145,346,145,muted,2);
-        float left=Float.isNaN(fraction)?15:9+14*(float)Math.sqrt(1-fraction);
-        float right=Float.isNaN(fraction)?15:9+14*(float)Math.sqrt(fraction);
-        tapeReel(c,154,left);tapeReel(c,346,right);
-        for(int x:new int[]{73,427}){
-            line(c,x-3,161,x+3,161,muted,1.5f);line(c,x,158,x,164,muted,1.5f);
-        }
+
+    private void musicMetadata(Canvas c, String title, String artist, String status, boolean available,
+                               boolean cover, String lyric, String nextLyric) {
+        float x = cover ? 320 : 365, width = cover ? 290 : 205;
+        txt(c, shorten(title, 40), x, cover ? 80 : 83, cover ? 26 : 28, available ? ink : muted, bold, width);
+        if (lyric.isEmpty()) txt(c, shorten(artist, 44), x, cover ? 116 : 119, 18, muted, regular, width);
+        else musicLyric(c, lyric, x, cover ? 116 : 119, 20, width, true, false);
+        if (nextLyric.isEmpty()) txt(c, status, x, cover ? 150 : 149, 14, muted, regular, width);
+        else musicLyric(c, nextLyric, x, cover ? 150 : 149, 16, width, false, false);
     }
-    private void tapeReel(Canvas c,float x,float radius){
-        dot(c,x,140,radius);
-        p.setColor(Color.BLACK);c.drawCircle(x,140,7,p);
-        for(int i=0;i<6;i++){
-            int angle=i*10;
-            line(c,x+SIN_60[angle]*6,140+COS_60[angle]*6,x+SIN_60[angle]*10,140+COS_60[angle]*10,Color.BLACK,2.5f);
-        }
+
+    private void musicLyric(Canvas c, String line, float x, float y, float size, float width,
+                            boolean current, boolean leftAlign) {
+        if (line.isEmpty()) return;
+        Typeface face = current ? bold : regular;
+        int color = current ? ink : muted;
+        p.setTypeface(face);
+        p.setTextSize(size);
+        String fitted = TextUtils.ellipsize(line, p, width, TextUtils.TruncateAt.END).toString();
+        if (leftAlign) textLeft(c, fitted, x, y, size, color, face, width);
+        else txt(c, fitted, x, y, size, color, face, width);
+    }
+
+    private void resetMusicSpectrum() {
+        if (musicSpectrum != null) musicSpectrum.reset();
     }
     private void coverArt(Canvas c,Bitmap art,float l,float t,float r,float b,boolean round){
         artRect.set(l,t,r,b);float radius=round?(r-l)/2:18;
         p.setShader(null);p.setStyle(Paint.Style.FILL);p.setAlpha(255);
         if(art!=null&&!dark){artClip.reset();artClip.addRoundRect(artRect,radius,radius,Path.Direction.CW);int save=c.save();c.clipPath(artClip);c.drawBitmap(art,null,artRect,p);c.restoreToCount(save);}
         else{
-            outline(c,l,t,r,b,radius,muted,1.5f);float cx=(l+r)/2,cy=(t+b)/2,s=(r-l)/102;
-            inkShader(l,t,r,b);line(c,cx-10*s,cy+15*s,cx-10*s,cy-23*s,ink,3*s);line(c,cx-10*s,cy-23*s,cx+18*s,cy-29*s,ink,3*s);line(c,cx+18*s,cy-29*s,cx+18*s,cy+7*s,ink,3*s);
+            themedOutline(c,l,t,r,b,radius,muted,1.5f,160);float cx=(l+r)/2,cy=(t+b)/2,s=(r-l)/102;
+            themeShader(l,t,r,b);line(c,cx-10*s,cy+15*s,cx-10*s,cy-23*s,ink,3*s);line(c,cx-10*s,cy-23*s,cx+18*s,cy-29*s,ink,3*s);line(c,cx+18*s,cy-29*s,cx+18*s,cy+7*s,ink,3*s);
             p.setColor(ink);c.drawOval(cx-24*s,cy+10*s,cx-9*s,cy+21*s,p);c.drawOval(cx+4*s,cy+2*s,cx+19*s,cy+13*s,p);p.setShader(null);
         }
     }
-    private void musicButton(Canvas c,int button,boolean playing,boolean enabled){float x=MediaControls.X[button],y=MediaControls.Y,radius=button==1?43:31;int foreground=enabled?ink:(muted&0xffffff)|0x68000000;boolean pressed=pressedMusicSlot==drawingSlot&&pressedMusicButton==button;float feedback=feedbackSlot==drawingSlot&&feedbackButton==button?Math.max(0,1-(SystemClock.uptimeMillis()-feedbackAt)/220f):0;c.save();if(pressed)c.scale(.94f,.94f,x,y);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(button==1?2.5f:1.5f);p.setColor(button==1?foreground:(muted&0xffffff)|0x80000000);if(button==1&&enabled)inkShader(x-radius,y-radius,x+radius,y+radius);c.drawCircle(x,y,radius,p);p.setShader(null);if((pressed||feedback>0)&&enabled){p.setStrokeWidth(2);p.setColor((ink&0xffffff)|((int)(160*(pressed?1:feedback))<<24));c.drawCircle(x,y,radius+5+(1-feedback)*4,p);if(!pressed)animateEffect(16);}p.setStyle(Paint.Style.FILL);p.setColor(foreground);if(button==1&&enabled)inkShader(x-radius,y-radius,x+radius,y+radius);if(button==1&&playing){c.drawRoundRect(x-10,y-13,x-3,y+13,2,2,p);c.drawRoundRect(x+3,y-13,x+10,y+13,2,2,p);}else{iconPath.reset();if(button==0){iconPath.moveTo(x+9,y-10);iconPath.lineTo(x-6,y);iconPath.lineTo(x+9,y+10);}else{iconPath.moveTo(x-(button==1?7:9),y-(button==1?14:10));iconPath.lineTo(x+(button==1?13:6),y);iconPath.lineTo(x-(button==1?7:9),y+(button==1?14:10));}iconPath.close();c.drawPath(iconPath,p);if(button!=1)c.drawRoundRect(button==0?x-12:x+9,y-11,button==0?x-8:x+13,y+11,1,1,p);}p.setShader(null);c.restore();}
+    private void musicButton(Canvas c, int button, boolean playing, boolean enabled) {
+        boolean primary = button == 1;
+        float x = MediaControls.X[button], y = MediaControls.Y, radius = primary ? 43 : 31;
+        int foreground = enabled ? ink : (muted & 0xffffff) | 0x68000000;
+        boolean pressed = pressedMusicSlot == drawingSlot && pressedMusicButton == button;
+        float feedback = feedbackSlot == drawingSlot && feedbackButton == button
+                ? Math.max(0, 1 - (SystemClock.uptimeMillis() - feedbackAt) / 220f) : 0;
+        c.save();
+        if (pressed) c.scale(.94f, .94f, x, y);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(primary ? 2.5f : 1.5f);
+        p.setColor(foreground);
+        if (!primary) p.setAlpha(enabled ? 150 : 104);
+        themeShader(x - radius, y - radius, x + radius, y + radius);
+        c.drawCircle(x, y, radius, p);
+        if ((pressed || feedback > 0) && enabled) {
+            p.setStrokeWidth(2);
+            p.setAlpha((int) (160 * (pressed ? 1 : feedback)));
+            c.drawCircle(x, y, radius + 5 + (1 - feedback) * 4, p);
+            if (!pressed) animateEffect(16);
+        }
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(foreground);
+        themeShader(x - 14, y - 14, x + 14, y + 14);
+        if (primary && playing) {
+            c.drawRoundRect(x - 10, y - 13, x - 3, y + 13, 2, 2, p);
+            c.drawRoundRect(x + 3, y - 13, x + 10, y + 13, 2, 2, p);
+        } else {
+            int direction = button == 0 ? -1 : 1;
+            float edge = x - direction * (primary ? 7 : 9);
+            float half = primary ? 14 : 10;
+            iconPath.reset();
+            iconPath.moveTo(edge, y - half);
+            iconPath.lineTo(x + direction * (primary ? 13 : 6), y);
+            iconPath.lineTo(edge, y + half);
+            iconPath.close();
+            c.drawPath(iconPath, p);
+            if (!primary) {
+                float stop = button == 0 ? x - 12 : x + 9;
+                c.drawRoundRect(stop, y - 11, stop + 4, y + 11, 1, 1, p);
+            }
+        }
+        p.setShader(null);
+        c.restore();
+    }
     private int musicHit(int slot,float x,float y){RectF r=cells[slot];float scale=Math.min(r.width()/540f,r.height()/432f);float cs=page.slots[slot].type.equals("clock")?1f:page.slots[slot].options.optInt("scale",100)/100f;return MediaControls.hit(250+((x-r.centerX())/scale-sceneShiftX)/cs,200+((y-r.centerY())/scale-sceneShiftY)/cs);}
     private boolean musicAction(int button){MediaController controller=DeskData.media;if(demo||!DeskData.musicAllowed||controller==null)return false;PlaybackState state=controller.getPlaybackState();boolean playing=state!=null&&state.getState()==PlaybackState.STATE_PLAYING;if(state==null||!MediaControls.enabled(state.getActions(),playing,button))return false;MediaController.TransportControls controls=controller.getTransportControls();try{if(button==0)controls.skipToPrevious();else if(button==2)controls.skipToNext();else if(playing)controls.pause();else controls.play();return true;}catch(SecurityException error){return false;}}
     private String shorten(String s,int n){if(s==null)return "";return s.length()>n?s.substring(0,n-1)+"…":s;}

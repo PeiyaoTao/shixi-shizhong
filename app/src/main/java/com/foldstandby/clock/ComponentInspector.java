@@ -25,10 +25,13 @@ final class ComponentInspector {
         void onEmbedPalette(LinearLayout host, int scope);
         void onOpenTimezone(Scene.Component c);
         void onOpenWeatherSettings();
+        void onPickFocusDuration();
         void onOpenFocusSettings();
         void onOpenPermissionSettings();
         void onCalendarAccess();
         void onMusicAccess();
+        void onImportMusicLyrics();
+        void onSpectrumAccess(boolean enabled);
         void onOpenMotionSettings();
         void onOpenTodoInput(String title, String initial, Consumer<String> onValue);
         TodoStore todoStore();
@@ -207,10 +210,10 @@ final class ComponentInspector {
                 renderWorldCard(c, prefs, container, comp, availWidthDp, host);
                 break;
             case "focus":
-                renderFocusCard(c, container, host);
+                renderFocusCard(c, prefs, container, host);
                 break;
             case "music":
-                renderMusicCard(c, container, host);
+                renderMusicCard(c, prefs, container, host);
                 break;
             case "battery":
                 renderBatteryCard(c, container, host);
@@ -399,21 +402,27 @@ final class ComponentInspector {
 
     private static void renderFocusCard(
         Context c,
+        SharedPreferences prefs,
         LinearLayout container,
         Host host
     ) {
         LinearLayout card = UiKit.card(c, container, "番茄专注计时", "所有专注组件共用计时与默认时长");
+        UiKit.action(c, card, "默认专注时长 · " + FocusDuration.label(DeskData.focusMinutes(prefs)) + "  ›", host::onPickFocusDuration);
         UiKit.action(c, card, "专注计时设置  ›", host::onOpenFocusSettings);
     }
 
     private static void renderMusicCard(
         Context c,
+        SharedPreferences prefs,
         LinearLayout container,
         Host host
     ) {
         LinearLayout card = UiKit.card(c, container, "媒体控制与会话权限", null);
         boolean allowed = DeskData.hasMusicAccess(c);
         UiKit.action(c, card, "音乐访问 · " + (allowed ? "已开启" : "未开启") + "  ›", host::onMusicAccess);
+        UiKit.toggle(c, card, "第三方实时频谱（可选）", MusicSpectrum.enabled(c, prefs), host::onSpectrumAccess);
+        UiKit.note(c, card, "开启时 Android 会请求录音权限，用于分析设备正在播放的声音。");
+        UiKit.action(c, card, "导入当前曲目的 LRC 歌词  ›", host::onImportMusicLyrics);
     }
 
     private static void renderBatteryCard(

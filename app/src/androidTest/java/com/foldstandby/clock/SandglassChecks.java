@@ -76,6 +76,12 @@ final class SandglassChecks {
         prefs.edit().putLong("focusEnd",1).commit();DeskData.toggleFocus(prefs);
         check(prefs.getLong("focusEnd",0)>SystemClock.elapsedRealtime(),"restart after completion starts a fresh timer");
         check(prefs.getFloat("focusResetFrom",-1)==0,"restart after completion also triggers an empty-glass turn");
+        DeskData.setFocusMinutes(prefs,95);
+        DeskData.resetFocus(prefs);
+        check(DeskData.remaining(prefs)==95*60000L&&DeskData.focusTotal(prefs)==95*60000L,
+            "custom multi-hour duration resets to full minutes");
+        DeskData.setFocusMinutes(prefs,0);
+        check(prefs.getInt("focusMinutes",0)==1,"focus duration clamps below minimum");
         prefs.edit().putInt("focusMinutes",25).putLong("focusEnd",0).remove("focusResetAt").commit();DeskData.resetFocus(prefs);
     }
     private Scene scene(){

@@ -25,6 +25,21 @@ final class StyleChecks {
     private int assertions,renders;
     private StyleChecks(Instrumentation runner){this.runner=runner;}
     static Bundle run(Instrumentation runner){return new StyleChecks(runner).run();}
+    static Bundle runGradients(Instrumentation runner){
+        StyleChecks checks=new StyleChecks(runner);
+        checks.context=runner.getTargetContext();
+        checks.prefs=checks.context.getSharedPreferences("gradient_checks",0);
+        Bundle result=new Bundle();
+        try{
+            checks.sync(checks::gradientChecks);
+            result.putBoolean("passed",true);
+            result.putString("result","PASS: "+checks.assertions+" gradient assertions across all 51 styles");
+        }catch(Throwable error){
+            result.putBoolean("passed",false);
+            result.putString("result",android.util.Log.getStackTraceString(error));
+        }finally{checks.prefs.edit().clear().commit();}
+        return result;
+    }
     private void check(boolean value,String label){assertions++;if(!value)throw new AssertionError(label);}
     private void sync(Runnable action){
         final Throwable[] error={null};runner.runOnMainSync(()->{try{action.run();}catch(Throwable e){error[0]=e;}});
@@ -34,7 +49,7 @@ final class StyleChecks {
         Bundle result=new Bundle();context=runner.getTargetContext();prefs=context.getSharedPreferences("style_checks",0);
         directory=new File(context.getFilesDir(),"qa-0.3.6");directory.mkdirs();
         try{
-            sync(()->{try{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",true).commit();modelChecks();renderChecks();animationChecks();interactionChecks();galleryChecks();}catch(Exception e){throw new AssertionError(e);}});
+            sync(()->{try{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",true).commit();modelChecks();renderChecks();musicPresentationChecks();animationChecks();interactionChecks();galleryChecks();}catch(Exception e){throw new AssertionError(e);}});
             mediaChecks();
             int styles=0;
             for(String type:Scene.TYPES)if(!type.equals("clock"))styles+=count(type);
@@ -80,6 +95,26 @@ final class StyleChecks {
         }
         Scene.Component clock=new Scene.Component();clock.style="flip";Scene.put(clock.styleOptions(),"duration",700);
         clock.setType("weather");clock.setType("clock");check(clock.style.equals("flip")&&clock.styleOptions().optInt("duration")==700,"clock style details survive type switch");
+        check(count("music") == 5, "vector artwork does not add gallery styles");
+        for (String style : new String[]{"record", "music_tape"}) {
+            JSONObject old = new Scene.Component().json();
+            Scene.put(old, "type", "music");
+            Scene.put(old, "style", style + "_vector");
+            Scene.put(old.getJSONObject("options"), "style:music", style + "_vector");
+            Scene.Component restored = Scene.Component.from(old);
+            check(restored.style.equals(style) && ComponentStyles.vectorArtwork(restored), "active vector artwork migrates: " + style);
+            restored.setType("clock");
+            restored.setType("music");
+            check(restored.style.equals(style) && ComponentStyles.vectorArtwork(restored), "vector artwork survives type changes: " + style);
+            ComponentStyles.setVectorArtwork(restored, false);
+            check(!ComponentStyles.vectorArtwork(Scene.Component.from(restored.json())), "realistic choice survives save: " + style);
+
+            Scene.put(old, "type", "clock");
+            Scene.put(old, "style", "digital");
+            Scene.Component remembered = Scene.Component.from(old);
+            remembered.setType("music");
+            check(remembered.style.equals(style) && ComponentStyles.vectorArtwork(remembered), "remembered vector artwork migrates: " + style);
+        }
     }
     private Bitmap render(View view,int width,int height){
         view.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));view.layout(0,0,width,height);
@@ -233,14 +268,28 @@ final class StyleChecks {
             Bitmap b=render(root,Math.round(window[0]*density),Math.round(window[1]*density));
             if(window[0]==554&&type.equals("weather")||window[0]==876&&type.equals("todo"))save(b,"gallery-"+type+(window[0]==554?"-portrait":"-landscape")+".png");b.recycle();
             int cardWidth=-1;
+            View firstCard = null;
             for(String id:ComponentStyles.ids(type)){
                 View card=root.findViewWithTag("style:"+type+":"+id);check(card!=null,"gallery card exists "+type+" / "+id);
+                if (firstCard == null) firstCard = card;
+                else if (window[0] == 320 || window[0] == 480 || window[0] == 554) {
+                    check(card.getParent() != firstCard.getParent(), "narrow windows stack style previews");
+                }
                 if(cardWidth<0)cardWidth=card.getMeasuredWidth();
                 check(Math.abs(card.getMeasuredWidth()-cardWidth)<=2,"gallery cards have equal width "+type+" / "+window[0]);
-                check(card.getMeasuredWidth()<=UiKit.dp(context,190)+1,"gallery card width is capped");
+                check(card.getBackground() == null, "style has no outer background");
                 ClockFace face=findFace(card);
-                check(face.getMeasuredWidth()==card.getMeasuredWidth()-UiKit.dp(context,6)*2,"preview fills the tile width");
+                check(face.getMeasuredWidth()==card.getMeasuredWidth(),"preview fills the tile width");
                 check(Math.abs(face.getMeasuredWidth()-face.getMeasuredHeight()*1.25f)<3,"preview ratio is independent of the screen");
+                check(face.getMeasuredWidth() > UiKit.dp(context,190), "style previews exceed the old width cap");
+                if (window[0] == 320 || window[0] == 554) {
+                    check(Math.abs(face.getMeasuredWidth()-UiKit.dp(context,window[0]-24))<=1, "cover portrait previews span the content width");
+                }
+                if (window[0] == 821) check(face.getMeasuredWidth() >= UiKit.dp(context,390), "inner portrait previews remain large");
+            }
+            if (window[0] == 1088) {
+                View second = root.findViewWithTag("style:"+type+":"+ComponentStyles.ids(type)[1]);
+                check(second.getParent() == firstCard.getParent(), "expanded landscape places previews side by side");
             }
             check(activity.draft.json().equals(before),"gallery preview never mutates draft");
         }
@@ -280,5 +329,104 @@ final class StyleChecks {
                 }
             }
         }finally{sync(()->{if(session[0]!=null)session[0].release();DeskData.media=previous;DeskData.musicAllowed=allowed;});}
+    }
+
+    private void musicPresentationChecks() {
+        for (int style = 0; style < count("music"); style++) {
+            Scene scene = model("music", style);
+            Scene.Component component = scene.pages.get(0).slots[0];
+            ClockFace face = face(scene, true, false);
+            face.testTime = 0;
+            Bitmap withoutLyrics = render(face, W, H);
+            Scene.put(component.options, MusicLyrics.SHOW, true);
+            Bitmap withLyrics = render(face, W, H);
+            check(!withoutLyrics.sameAs(withLyrics), "lyrics appear in music style " + style);
+            Scene restored = Scene.parse(scene.json());
+            check(restored.pages.get(0).slots[0].bool(MusicLyrics.SHOW, false), "lyric choice survives saving");
+            withoutLyrics.recycle();
+            withLyrics.recycle();
+        }
+
+        Scene scene = model("music", 0);
+        Scene.Component component = scene.pages.get(0).slots[0];
+        Scene.put(component.theme, "accent", 0xffc43031);
+        ClockFace face = face(scene, true, false);
+        Bitmap solid = render(face, W, H);
+        Scene.put(component.theme, "timeGradient", 1);
+        Bitmap gradient = render(face, W, H);
+        float inset = H * .035f;
+        float scale = Math.min((W - 2 * inset) / 540f, (H - 2 * inset) / 432f);
+        int y = Math.round(H / 2f + (MediaControls.Y - 200) * scale);
+        for (int button : new int[]{0, 2}) {
+            int x = Math.round(W / 2f + (MediaControls.X[button] - 250) * scale);
+            check(solid.getPixel(x, y) == 0xffc43031, "skip button uses the custom solid accent");
+            check(gradient.getPixel(x, y) != solid.getPixel(x, y), "skip button glyph uses the theme gradient");
+        }
+        solid.recycle();
+        gradient.recycle();
+    }
+
+    private void gradientChecks(){
+        prefs.edit().clear().putBoolean("motion",false).commit();
+        for(String type:Scene.TYPES){
+            for(int style=0;style<count(type);style++){
+                Scene scene=model(type,style);
+                Scene.Component component=scene.pages.get(0).slots[0];
+                if(type.equals("clock")){
+                    Scene.put(component.options,"seconds",true);
+                    Scene.put(component.styleOptions(),"labels",2);
+                }
+                ClockFace face=face(scene,true,false);
+                face.setLayoutTarget(W,H,null);
+                Bitmap solid=render(face,W,H);
+                Scene.put(component.theme,"timeGradient",1);
+                Bitmap gradient=render(face,W,H);
+                String name=type+" / "+component.style;
+                try{
+                    check(!solid.sameAs(gradient),"daytime gradient changes "+name);
+                    if(type.equals("world")&&style==3){
+                        check(gradientPixels(solid,gradient,new Rect(195,64,305,73))>8,"daylight orbit arc uses gradient");
+                    }else if(type.equals("world")&&style==4){
+                        for(int y:new int[]{119,267}){
+                            check(gradientPixels(solid,gradient,new Rect(70,y-3,136,y+3))>8,"day band night segment uses gradient");
+                            check(gradientPixels(solid,gradient,new Rect(190,y-3,310,y+3))>8,"day band daylight segment uses gradient");
+                            check(gradientPixels(solid,gradient,new Rect(55,y-16,445,y-8))>8,"day band current-time marker uses gradient");
+                        }
+                    }else if(type.equals("alarm")&&style==4){
+                        check(gradientPixels(solid,gradient,new Rect(70,242,430,248))>8,"alarm ruler uses gradient");
+                        check(gradientPixels(solid,gradient,new Rect(160,214,192,229))>8,"alarm ruler marker uses gradient");
+                    }else if(type.equals("calendar")&&style==1){
+                        check(gradientPixels(solid,gradient,new Rect(114,139,120,158))>8,"agenda timeline spine uses gradient");
+                    }else if(type.equals("weather")&&style==1){
+                        check(gradientPixels(solid,gradient,new Rect(54,98,198,238))>20,"weather icon uses gradient");
+                    }else if(type.equals("weather")&&style==4){
+                        check(gradientPixels(solid,gradient,new Rect(113,173,184,178))>8,"humidity waterline uses gradient");
+                    }else if(type.equals("battery")&&style==4){
+                        check(gradientPixels(solid,gradient,new Rect(94,141,105,147))>8,"battery ruler marker uses gradient");
+                    }
+                }finally{
+                    solid.recycle();gradient.recycle();
+                }
+                face.nightPreview=true;
+                Bitmap nightGradient=render(face,W,H);
+                Scene.put(component.theme,"timeGradient",0);
+                Bitmap nightSolid=render(face,W,H);
+                try{check(nightSolid.sameAs(nightGradient),"night palette remains solid for "+name);}
+                finally{nightSolid.recycle();nightGradient.recycle();}
+            }
+        }
+    }
+
+    private int gradientPixels(Bitmap before,Bitmap after,Rect componentArea){
+        ClockLayout.Area cell=ClockLayout.arrange(W,H,null,0).get(0)[0];
+        float scale=Math.min(cell.width()/540f,cell.height()/432f);
+        float x=(cell.left+cell.right)/2-250*scale,y=(cell.top+cell.bottom)/2-200*scale;
+        int left=Math.round(x+componentArea.left*scale),right=Math.round(x+componentArea.right*scale);
+        int top=Math.round(y+componentArea.top*scale),bottom=Math.round(y+componentArea.bottom*scale);
+        int changed=0;
+        for(int row=top;row<bottom;row++)for(int col=left;col<right;col++){
+            if(before.getPixel(col,row)!=after.getPixel(col,row))changed++;
+        }
+        return changed;
     }
 }

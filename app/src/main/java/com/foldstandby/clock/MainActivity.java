@@ -7,6 +7,8 @@ import android.content.res.ColorStateList;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.media.MediaMetadata;
+import android.media.session.MediaController;
 import android.net.Uri;
 import android.os.*;
 import android.provider.Settings;
@@ -14,6 +16,8 @@ import android.text.*;
 import android.view.*;
 import android.view.animation.PathInterpolator;
 import android.widget.*;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import java.util.function.Consumer;
 import org.json.*;
@@ -30,7 +34,16 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     Scene draft;
     private String baseline, pageId;
     private int tab = 1, slot, category, paletteScope = 2, inspectorGroup;
-    private boolean testMode, previewNight, pageOverview, navExpanded, portraitStyleScreen;
+    private enum PreviewPicker {
+        STYLE("选择组件样式"), COMPONENT("更换组件"), ADD_PAGE("添加页面"), PAGE_LAYOUT("页面布局");
+
+        final String title;
+
+        PreviewPicker(String title) { this.title = title; }
+    }
+
+    private boolean testMode, previewNight, pageOverview, navExpanded;
+    private PreviewPicker previewPicker;
     private String libraryType;
     private int widthDp, heightDp, windowWidthDp, navigationWidthDp;
     private AdaptiveLayout policy;
@@ -49,7 +62,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     private String colorContext = "";
     private final EditHistory history = new EditHistory();
     private String historyState;
-    private boolean componentPicker, imeVisible, horizontalFold;
+    private boolean imeVisible, horizontalFold;
     private int studioPanel, contentInsetLeft, contentInsetTop, safeLeft, safeTop, safeWidth, safeHeight;
     private Rect localFold;
     private int previewPaneWidth, editorPaneWidth;
@@ -64,8 +77,12 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     private AlertDialog locationDialog, searchDialog;
     private InputDialog inputDialog;
     private static final int WEATHER_LOCATION_PERMISSION = 14;
+    private static final int WEATHER_LOCATION_SETTINGS_PERMISSION = 17;
     private static final int CALENDAR_PERMISSION = 12;
+    private static final int SPECTRUM_PERMISSION = 16;
     private static final int NOTIFICATION_PERMISSION = 13;
+    private static final int IMPORT_MUSIC_LYRICS = 21;
+    private String pendingLyricsKey, pendingLyricsTitle;
     private String pendingStandbyPermission, standbyError;
     private boolean returningFromComponentSettings, retryWeatherOnReturn;
     private static final int DISPLAY_SETTINGS = 0, PAGE_SETTINGS = 1, DATA_SETTINGS = 2;
@@ -73,6 +90,9 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     private static final int[] SETTINGS_ORDER = { STANDBY_SETTINGS, DISPLAY_SETTINGS, PAGE_SETTINGS, DATA_SETTINGS, SCENE_SETTINGS, ABOUT_SETTINGS };
     private static final String[] SETTINGS_TITLES = {
         "显示与夜间", "翻页与动效", "数据与权限", "自动待机", "场景与恢复", "关于"
+    };
+    private static final String[][] PAGE_PRESET_COMPONENTS = {
+        {"clock"}, {"clock", "weather"}, {"clock", "date"}, {"clock", "weather", "date", "battery"}
     };
     private static final String WEATHER_SETTINGS = "settings:weather";
     private static final String FOCUS_SETTINGS = "settings:focus";
@@ -93,7 +113,10 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     }
     private final Runnable clockPulse = new Runnable() {
         public void run() {
-            if (!testMode) AlarmData.refresh(MainActivity.this, false);
+            if (!testMode) {
+                AlarmData.refresh(MainActivity.this, false);
+                DeskData.refreshWorldDaylight(MainActivity.this);
+            }
             updateAlarmStatus();
             boolean showingStatus = tab == 3;
             if (showingStatus) updateSettingsStatus();
@@ -258,7 +281,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
                 }
             }
             historyState = captureEditorState(); libraryType = component().type;
-            colorState.hex = null; colorContext = ""; portraitStyleScreen = componentPicker = false;
+            colorState.hex = null; colorContext = ""; previewPicker = null;
             persistDraft(); show();
             return true;
         } catch (JSONException e) {
@@ -383,14 +406,19 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         historyState = captureEditorState();
         if (state != null) {
             pendingStandbyPermission = state.getString("pendingStandbyPermission");
+            pendingLyricsKey = state.getString("pendingLyricsKey");
+            pendingLyricsTitle = state.getString("pendingLyricsTitle");
             returningFromComponentSettings = state.getBoolean("returningFromComponentSettings");
             retryWeatherOnReturn = state.getBoolean("retryWeatherOnReturn");
             studioPanel = state.getInt("studioPanel");
-            componentPicker = state.getBoolean("componentPicker");
             history.restore(state.getStringArrayList("undoStates"), state.getStringArrayList("redoStates"));
             pageOverview = state.getBoolean("pageOverview");
             navExpanded = state.getBoolean("navExpanded");
-            portraitStyleScreen = state.getBoolean("portraitStyleScreen");
+            String savedPicker = state.getString("previewPicker");
+            if (savedPicker != null) previewPicker = PreviewPicker.valueOf(savedPicker);
+            else if (state.getBoolean("portraitStyleScreen")) {
+                previewPicker = state.getBoolean("componentPicker") ? PreviewPicker.COMPONENT : PreviewPicker.STYLE;
+            }
             libraryType = state.getString("libraryType");
             Scene restored = Scene.parse(state.getString("draft", ""));
             if (restored != null) draft = restored;
@@ -506,23 +534,23 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         settingsHinge = tab == 3 && settingsLandscape && fold != null && fold.width() <= fold.height()
                 && AdaptiveLayout.settingsCanSpanHinge(fold.left - nav, w - fold.right, h, scale)
                 ? fold : null;
-        if(fold!=null&&settingsHinge==null&&(!canSplit||tab==3||portraitStyleScreen))region=largestRegion(w,h,fold);
+        if(fold!=null&&settingsHinge==null&&(!canSplit||tab==3||previewPicker!=null))region=largestRegion(w,h,fold);
         safeLeft=region.left;safeTop=region.top;safeWidth=w=region.width();safeHeight=h=region.height();
         windowWidthDp=w;
         navigationWidthDp=w>h&&navExpanded?Math.min(220,Math.max(150,Math.round(w*.22f))):0;
         widthDp=w-navigationWidthDp;heightDp=h;
         localFold=fold==null?null:new Rect(fold.left-safeLeft-navigationWidthDp-6,fold.top-safeTop-5,
             fold.right-safeLeft-navigationWidthDp-6,fold.bottom-safeTop-5);
-        horizontalFold=canSplit&&region.left==0&&region.top==0&&fold.width()>fold.height()&&tab!=3&&!portraitStyleScreen;
+        horizontalFold=canSplit&&region.left==0&&region.top==0&&fold.width()>fold.height()&&tab!=3&&previewPicker==null;
         policy=new AdaptiveLayout(widthDp,h,scale);
-        boolean split=canSplit&&region.left==0&&region.top==0&&tab!=3&&!portraitStyleScreen;
+        boolean split=canSplit&&region.left==0&&region.top==0&&tab!=3&&previewPicker==null;
         previewPaneWidth=editorPaneWidth=widthDp-12;
         if(split&&!horizontalFold){previewPaneWidth=localFold.left;editorPaneWidth=widthDp-12-localFold.right;}
         else if(policy.parallel&&!horizontalFold){previewPaneWidth=policy.left;editorPaneWidth=widthDp-policy.left-20;}
         previews.clear();carouselPreviews.clear();scrollViews.clear();colorEditor=null;brandButton=null;carouselScroll=null;workbenchHost=null;activeStage=null;
         LinearLayout root=UiKit.column(this);root.setBackgroundColor(UiKit.BG);
         if(tab==3)renderSettingsShell(root);
-        else if(portraitStyleScreen)renderStyleSelector(root, scale);
+        else if(previewPicker!=null)renderPreviewPicker(root, originalW > originalH, scale);
         else{
             workspace=new FoldWorkspace(this);workspace.setOrientation(LinearLayout.HORIZONTAL);workspace.setPadding(dp(6),dp(5),dp(6),dp(6));
             root.addView(workspace,new LinearLayout.LayoutParams(-1,0,1));
@@ -922,18 +950,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         labels.add("删除此页");actions.add(()->{if(draft.pages.size()==1){showNotice("至少保留一个页面");return;}int index=draft.index(pageId);Scene.Page old=page();draft.remove(old);pageId=draft.pages.get(Math.min(index,draft.pages.size()-1)).id;slot=0;changed();show();showNotice("已删除「"+old.name+"」");});
         AppDialogs.builder(this).setTitle(page().name).setItems(labels.toArray(new String[0]),(d,n)->actions.get(n).run()).setNegativeButton("关闭",null).show();
     }
-    private void showLayoutPicker(boolean adding){
-        InputDialog dialog=new InputDialog(this,adding?"添加页面":"页面布局",adding?"选择布局与默认搭配，随后点击区域修改内容":"切换布局会保留暂时隐藏的区域内容");
-        LinearLayout content=dialog.content();
-        for(int i=0;i<4;i++){
-            final int layout=i;Scene sample=draft.copy();Scene.Page target=adding?new Scene.Page():sample.pages.get(sample.index(pageId));target.layout=i;
-            if(adding){String[][] defaults={{"clock"},{"clock","weather"},{"clock","date"},{"clock","weather","date","battery"}};for(int n=0;n<defaults[i].length;n++)target.slots[n].setType(defaults[i][n]);target.refreshName();sample.pages.add(target);}
-            LinearLayout card=UiKit.card(this,content,Dashboard.LAYOUTS[i]+" · "+target.contentName(),null);
-            AspectPreview frame=new AspectPreview(this);ClockFace face=new ClockFace(this,prefs);face.managedRefresh=true;face.demo=true;face.bind(sample,sample.index(target.id));face.nightPreview=previewNight;frame.addView(face);card.addView(frame,new LinearLayout.LayoutParams(-1,dp(110)));
-            Runnable choose=()->{history.finish();if(adding){Scene.Page page=Scene.Page.from(target.json());draft.pages.add(page);pageId=page.id;slot=0;}else{page().layout=layout;slot=Math.min(slot,page().count()-1);}tab=1;changed();dialog.dismiss();show();if(adding)showNotice("页面已添加 · 点击区域编辑");};
-            face.setOnClickListener(v->choose.run());card.setOnClickListener(v->choose.run());UiKit.action(this,card,"使用"+Dashboard.LAYOUTS[i],choose);
-        }
-        openInputDialog(dialog);
+    private void showLayoutPicker(boolean adding) {
+        openPreviewPicker(adding ? PreviewPicker.ADD_PAGE : PreviewPicker.PAGE_LAYOUT);
     }
 
     /** Compact object selection and Content / Appearance / Palette controls. */
@@ -959,12 +977,46 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         else if(studioPanel==1){
             LinearLayout style=UiKit.card(this,body,"组件外观",null);UiKit.action(this,style,"更换外观 · "+ComponentStyles.names(component().type)[ComponentStyles.selectedIndex(component())]+"  →",()->openSelector(false));
             if(component().type.equals("clock")){ComponentInspector.render(this,prefs,body,component(),0,paletteScope,innerWidth,inspectorHost());ComponentInspector.render(this,prefs,body,component(),1,paletteScope,innerWidth,inspectorHost());}
-            else{UiKit.slider(this,style,"显示大小",component().options.optInt("scale",100),75,125,"%",v->{Scene.put(component().options,"scale",v);changed();});UiKit.toggle(this,style,"显示组件边框",component().bool("card",false),v->{Scene.put(component().options,"card",v);changed();});}
+            else{
+                Scene.Component selected = component();
+                if (selected.type.equals("music")) {
+                    UiKit.toggle(this, style, "显示歌词", selected.bool(MusicLyrics.SHOW, false), shown -> {
+                        Scene.put(selected.options, MusicLyrics.SHOW, shown);
+                        changed();
+                    });
+                }
+                if (ComponentStyles.hasMusicArtwork(selected)) {
+                    UiKit.choice(this, style, "造型", new String[]{"写实", "矢量"},
+                            ComponentStyles.vectorArtwork(selected) ? 1 : 0, choice -> {
+                                ComponentStyles.setVectorArtwork(selected, choice == 1);
+                                changed();
+                                show();
+                            });
+                }
+                UiKit.slider(this,style,"显示大小",selected.options.optInt("scale",100),75,125,"%",v->{Scene.put(selected.options,"scale",v);changed();});
+                UiKit.toggle(this,style,"显示组件边框",selected.bool("card",false),v->{Scene.put(selected.options,"card",v);changed();});
+            }
         }else ComponentInspector.render(this,prefs,body,component(),component().type.equals("clock")?3:0,paletteScope,innerWidth,inspectorHost());
         savedStatus=UiKit.text(this,"已自动保存",10,UiKit.MUTED);savedStatus.setPadding(dp(2),dp(8),0,0);body.addView(savedStatus);
 
     }
-    private void openSelector(boolean types){history.finish();componentPicker=types;libraryType=component().type;portraitStyleScreen=true;show();}
+    private void openSelector(boolean types) {
+        libraryType = component().type;
+        openPreviewPicker(types ? PreviewPicker.COMPONENT : PreviewPicker.STYLE);
+    }
+
+    private void openPreviewPicker(PreviewPicker picker) {
+        history.finish();
+        navExpanded = false;
+        previewPicker = picker;
+        show();
+    }
+
+    private void closePreviewPicker() {
+        previewPicker = null;
+        tab = 1;
+        show();
+    }
     private void renderStudioPalette(LinearLayout body,int innerWidth){
         String[] names={"全场景","当前页","当前组件"};
         LinearLayout card=UiKit.card(this,body,previewNight?"夜间配色":"日间配色",null);
@@ -977,43 +1029,52 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     }
     private void clearTheme(JSONObject theme){ArrayList<String> keys=new ArrayList<>();for(Iterator<String> i=theme.keys();i.hasNext();)keys.add(i.next());for(String key:keys)theme.remove(key);}
 
-    private void renderStyleSelector(LinearLayout root, float fontScale) {
-        Scene.Component current = component();
-        if (libraryType == null) libraryType = current.type;
-        boolean types = componentPicker;
-        String[] names = types ? Scene.TYPE_NAMES : ComponentStyles.names(libraryType);
+    private void renderPreviewPicker(LinearLayout root, boolean landscape, float fontScale) {
+        PreviewPicker picker = previewPicker;
+        boolean adding = picker == PreviewPicker.ADD_PAGE;
+        boolean pageLayouts = adding || picker == PreviewPicker.PAGE_LAYOUT;
+        boolean types = picker == PreviewPicker.COMPONENT;
+        String[] names;
+        String subtitle;
+        Scene.Component current = pageLayouts ? null : component();
+        if (pageLayouts) {
+            names = Dashboard.LAYOUTS;
+            subtitle = adding ? "选择布局与默认搭配" : "切换布局会保留暂时隐藏的区域内容";
+        } else {
+            if (libraryType == null) libraryType = current.type;
+            names = types ? Scene.TYPE_NAMES : ComponentStyles.names(libraryType);
+            subtitle = Scene.typeName(current.type) + " · " + regionName(slot);
+        }
+        float aspect = pageLayouts ? AdaptiveLayout.PAGE_PREVIEW_ASPECT : AdaptiveLayout.COMPONENT_PREVIEW_ASPECT;
         int availableWidth = Math.max(1, widthDp - 24);
-        int columns = AdaptiveLayout.galleryColumns(availableWidth, heightDp, fontScale, names.length);
-        int galleryWidth = AdaptiveLayout.galleryWidth(availableWidth, heightDp, columns);
+        int columns = AdaptiveLayout.galleryColumns(availableWidth, heightDp, fontScale, names.length, landscape, aspect);
+        int galleryWidth = AdaptiveLayout.galleryWidth(availableWidth, heightDp, fontScale, columns, landscape, aspect);
         int gap = dp(AdaptiveLayout.GALLERY_GAP);
         int tileWidth = (dp(galleryWidth) - (columns - 1) * gap) / columns;
-        int previewHeight = Math.max(dp(1), Math.round((tileWidth - 2 * dp(6)) * .8f));
+        int previewHeight = Math.max(dp(1), Math.round(tileWidth / aspect));
 
         LinearLayout top = UiKit.row(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.setPadding(0, dp(6), 0, dp(6));
-        TextView back = icon("‹", "返回编辑", () -> {
-            portraitStyleScreen = componentPicker = false;
-            tab = 1;
-            show();
-        });
+        TextView back = icon("‹", "返回编辑", this::closePreviewPicker);
         back.setMinWidth(dp(48));
         back.setMinHeight(dp(48));
         top.addView(back);
         LinearLayout heading = UiKit.column(this);
         heading.setPadding(dp(12), 0, 0, 0);
-        TextView title = UiKit.text(this, types ? "更换组件" : "选择组件样式", 16, UiKit.TEXT);
+        TextView title = UiKit.text(this, picker.title, 16, UiKit.TEXT);
         title.setTypeface(null, Typeface.BOLD);
         title.setAccessibilityHeading(true);
         heading.addView(title);
-        heading.addView(UiKit.text(this, Scene.typeName(current.type) + " · " + regionName(slot), 11, UiKit.MUTED));
+        heading.addView(UiKit.text(this, subtitle, 11, UiKit.MUTED));
         top.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams toolbarParams = new LinearLayout.LayoutParams(dp(Math.min(availableWidth,
                 Math.max(320, galleryWidth))), -2);
         toolbarParams.gravity = Gravity.CENTER_HORIZONTAL;
         root.addView(top, toolbarParams);
 
-        ScrollView scroll = scroll(root, "selector:" + types + ":" + libraryType, false);
+        String scrollKey = pageLayouts ? "selector:" + picker : "selector:" + types + ":" + libraryType;
+        ScrollView scroll = scroll(root, scrollKey, false);
         scroll.setPadding(dp(12), dp(4), dp(12), dp(12));
         LinearLayout gallery = UiKit.column(this);
         scroll.addView(gallery, new FrameLayout.LayoutParams(dp(galleryWidth), -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
@@ -1024,8 +1085,10 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -1, 1);
                 if (column > 0) params.setMarginStart(gap);
                 if (index < names.length) {
-                    String type = types ? Scene.TYPES[index] : libraryType;
-                    row.addView(styleCard(current, type, index, names[index], types, previewHeight), params);
+                    View tile = pageLayouts ? pageLayoutTile(index, adding, previewHeight)
+                            : componentTile(current, types ? Scene.TYPES[index] : libraryType,
+                                    index, names[index], types, previewHeight);
+                    row.addView(tile, params);
                 } else {
                     row.addView(new Space(this), params);
                 }
@@ -1036,18 +1099,44 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         }
     }
 
-    private View styleCard(Scene.Component current, String type, int index, String label, boolean types, int previewHeight) {
-        boolean active = current.type.equals(type) && (types || ComponentStyles.selectedIndex(current) == index);
-        StyleCard card = new StyleCard(this);
-        card.setPadding(dp(6), dp(6), dp(6), dp(4));
-        card.setBackground(UiKit.surface(this, active ? UiKit.ACTIVE_BG : UiKit.PANEL, 14,
-                active ? UiKit.ACTIVE_BORDER : UiKit.PANEL_BORDER, 1));
-        card.setClipToOutline(true);
-        card.setForeground(new RippleDrawable(ColorStateList.valueOf(0x33b8e5c7), null,
-                UiKit.surface(this, Color.WHITE, 14)));
-        card.setFocusable(true);
-        card.setSelected(active);
+    private View pageLayoutTile(int layout, boolean adding, int previewHeight) {
+        Scene sample = draft.copy();
+        Scene.Page example = adding ? new Scene.Page() : sample.pages.get(sample.index(pageId));
+        example.layout = layout;
+        if (adding) {
+            String[] defaults = PAGE_PRESET_COMPONENTS[layout];
+            for (int i = 0; i < defaults.length; i++) example.slots[i].setType(defaults[i]);
+            example.refreshName();
+            sample.pages.add(example);
+        }
+        String name = Dashboard.LAYOUTS[layout];
+        String label = adding ? name + " · " + example.contentName() : name;
+        ClockFace face = galleryFace(sample, sample.index(example.id));
+        // Lay out the entire page before scaling it down, including all four slots in small windows.
+        face.setLayoutTarget(800, 800 / AdaptiveLayout.PAGE_PREVIEW_ASPECT, null);
+        PreviewTile tile = previewTile(face, label, !adding && page().layout == layout, previewHeight);
+        tile.setTag("page-layout:" + layout);
+        tile.setContentDescription((adding ? "添加页面 · " : "使用布局 · ") + label);
+        tile.setOnClickListener(v -> {
+            history.finish();
+            if (adding) {
+                Scene.Page added = Scene.Page.from(example.json());
+                draft.pages.add(added);
+                pageId = added.id;
+                slot = 0;
+            } else {
+                page().layout = layout;
+                slot = Math.min(slot, page().count() - 1);
+            }
+            changed();
+            closePreviewPicker();
+            if (adding) showNotice("页面已添加 · 点击区域编辑");
+        });
+        return tile;
+    }
 
+    private View componentTile(Scene.Component current, String type, int index, String label, boolean types, int previewHeight) {
+        boolean active = current.type.equals(type) && (types || ComponentStyles.selectedIndex(current) == index);
         Scene sample = draft.copy();
         int pageIndex = sample.index(pageId);
         Scene.Page page = sample.pages.get(pageIndex);
@@ -1063,17 +1152,49 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             TodoItems.toggle(example, 2);
         }
 
-        // Render the component in the tile's own bounds, independent of the window and hinge.
+        PreviewTile tile = previewTile(galleryFace(sample, pageIndex), label, active, previewHeight);
+        String note = types ? "" : ComponentStyles.notes(type)[index];
+        tile.setContentDescription((types ? "更换组件 · " : "应用外观 · ") + label + (note.isEmpty() ? "" : " · " + note));
+        tile.setTag(types ? "component:" + type : "style:" + type + ":" + ComponentStyles.ids(type)[index]);
+        tile.setOnClickListener(v -> {
+            history.finish();
+            Scene.Component selected = component();
+            if (types) selected.setType(type);
+            else ComponentStyles.select(selected, type, index);
+            libraryType = selected.type;
+            changed();
+            closePreviewPicker();
+        });
+        return tile;
+    }
+
+    private ClockFace galleryFace(Scene sample, int pageIndex) {
         ClockFace face = new ClockFace(this, prefs);
         face.managedRefresh = true;
         face.demo = true;
         face.nightPreview = previewNight;
         face.bind(sample, pageIndex);
+        previews.add(face);
+        if (!testMode) {
+            DeskData.refreshWorldDaylightPreview(this, sample.pages.get(pageIndex), prefs, () -> {
+                for (ClockFace preview : previews) preview.invalidate();
+            });
+        }
+        return face;
+    }
+
+    private PreviewTile previewTile(ClockFace face, String label, boolean active, int previewHeight) {
+        PreviewTile tile = new PreviewTile(this);
+        tile.setForeground(new RippleDrawable(ColorStateList.valueOf(0x33b8e5c7), null,
+                UiKit.surface(this, Color.WHITE, 14)));
+        tile.setFocusable(true);
+        tile.setSelected(active);
         face.setBackground(UiKit.surface(this, Color.BLACK, 9));
         face.setClipToOutline(true);
+        face.setForeground(UiKit.surface(this, Color.TRANSPARENT, 9,
+                active ? UiKit.ACCENT : UiKit.PANEL_BORDER, active ? 2 : 1));
         face.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        card.addView(face, new LinearLayout.LayoutParams(-1, previewHeight));
-        previews.add(face);
+        tile.addView(face, new LinearLayout.LayoutParams(-1, previewHeight));
 
         LinearLayout caption = UiKit.row(this);
         caption.setGravity(Gravity.CENTER_VERTICAL);
@@ -1088,33 +1209,18 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             check.setPadding(dp(5), 0, 0, 0);
             caption.addView(check);
         }
-        card.addView(caption, new LinearLayout.LayoutParams(-1, -2));
-
-        String note = types ? "" : ComponentStyles.notes(type)[index];
-        card.setContentDescription((types ? "更换组件 · " : "应用外观 · ") + label + (note.isEmpty() ? "" : " · " + note));
-        card.setTag(types ? "component:" + type : "style:" + type + ":" + ComponentStyles.ids(type)[index]);
-        card.setOnClickListener(v -> {
-            history.finish();
-            Scene.Component selected = component();
-            if (types) selected.setType(type);
-            else ComponentStyles.select(selected, type, index);
-            libraryType = selected.type;
-            portraitStyleScreen = componentPicker = false;
-            tab = 1;
-            changed();
-            show();
-        });
-        return card;
+        tile.addView(caption, new LinearLayout.LayoutParams(-1, -2));
+        return tile;
     }
 
-    private static final class StyleCard extends LinearLayout {
-        StyleCard(Context context) {
+    private static final class PreviewTile extends LinearLayout {
+        PreviewTile(Context context) {
             super(context);
             setOrientation(VERTICAL);
         }
 
         @Override public boolean onInterceptTouchEvent(MotionEvent event) {
-            // The card owns taps across the preview and caption.
+            // The tile owns taps across the preview and caption.
             return true;
         }
 
@@ -1143,10 +1249,13 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             public void onEmbedPalette(LinearLayout host, int scope) { palette(host, scope); }
             public void onOpenTimezone(Scene.Component c) { zone(c); }
             public void onOpenWeatherSettings() { openSettings(DATA_SETTINGS, true, WEATHER_SETTINGS); }
+            public void onPickFocusDuration() { showFocusDuration(); }
             public void onOpenFocusSettings() { openSettings(DATA_SETTINGS, true, FOCUS_SETTINGS); }
             public void onOpenPermissionSettings() { openSettings(DATA_SETTINGS, true, PERMISSION_SETTINGS); }
             public void onCalendarAccess() { calendarPermission(calendarGranted()); }
             public void onMusicAccess() { openMusicAccess(); }
+            public void onImportMusicLyrics() { importMusicLyrics(); }
+            public void onSpectrumAccess(boolean enabled) { setSpectrumAccess(enabled); }
             public void onOpenMotionSettings() { openSettings(PAGE_SETTINGS, true, null); }
             public void onOpenTodoInput(String title, String initial, Consumer<String> onValue) { input(title, initial, onValue); }
             public TodoStore todoStore() { return todoStore; }
@@ -1156,7 +1265,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
     private void openSettings(int group, boolean detail, String anchor) {
         navExpanded = false;
-        portraitStyleScreen = false;
+        previewPicker = null;
         category = group;
         settingsDetail = detail;
         pendingSettingsAnchor = anchor;
@@ -1386,8 +1495,10 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
         LinearLayout focus = UiKit.card(this, body, "专注计时", "默认时长从下一轮计时生效。");
         focus.setTag(FOCUS_SETTINGS);
-        prefChoice(focus, "默认专注时长", new String[] { "5 分钟", "15 分钟", "25 分钟", "45 分钟", "60 分钟" },
-            new int[] { 5, 15, 25, 45, 60 }, "focusMinutes", 25);
+        TextView focusDuration = UiKit.action(this, focus,
+            "默认专注时长 · " + FocusDuration.label(DeskData.focusMinutes(prefs)) + "  ›",
+            this::showFocusDuration);
+        focusDuration.setTag("settings:focus-duration");
         UiKit.action(this, focus, "重置当前计时", () -> {
             if (DeskData.remaining(prefs) < DeskData.focusTotal(prefs) && DeskData.remaining(prefs) > 0) {
                 AppDialogs.builder(this).setTitle("重置当前计时？")
@@ -1406,8 +1517,10 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         UiKit.action(this, permissions, "音乐访问 · " + (DeskData.hasMusicAccess(this) ? "已开启  ›" : "未开启  ›"),
             this::openMusicAccess);
         UiKit.note(this, permissions, "音乐访问用于读取播放状态，与应用通知显示分别授权。");
+        UiKit.toggle(this, permissions, "第三方实时频谱（可选）", MusicSpectrum.enabled(this, prefs),
+            this::setSpectrumAccess);
         UiKit.action(this, permissions, "天气定位 · " + (WeatherLocation.allowed(this) ? "已允许  ›" : "按需授权  ›"),
-            () -> openSettings(DATA_SETTINGS, true, WEATHER_SETTINGS));
+            this::weatherLocationPermission);
         boolean notificationsEnabled = notificationsEnabled();
         UiKit.action(this, permissions, "应用通知 · " + (notificationsEnabled ? "已允许  ›" : "已关闭  ›"),
             this::openNotificationAccess);
@@ -1417,6 +1530,23 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     private void resetCurrentFocus() {
         DeskData.resetFocus(prefs);
         Toast.makeText(this, "已重置当前计时", Toast.LENGTH_SHORT).show();
+    }
+
+    private void showFocusDuration() {
+        InputDialog dialog = new InputDialog(this, "默认专注时长", "左右选择小时与分钟，默认时长从下一轮计时生效。");
+        FocusDurationPicker picker = new FocusDurationPicker(this, DeskData.focusMinutes(prefs));
+        dialog.content().addView(picker);
+        dialog.primary("应用", android.view.inputmethod.EditorInfo.IME_ACTION_DONE, () -> {
+            int total = picker.totalMinutes();
+            if (total < FocusDuration.MIN_MINUTES) {
+                picker.showZeroError();
+                return;
+            }
+            DeskData.setFocusMinutes(prefs, total);
+            dialog.dismiss();
+            show();
+        });
+        openInputDialog(dialog);
     }
 
     private String weatherCity() {
@@ -1465,6 +1595,67 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
     private void openMusicAccess() {
         openSystemSettings(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), "此设备未提供通知使用权设置");
+    }
+
+    private void importMusicLyrics() {
+        if (!testMode) DeskData.refresh(this, false);
+        MediaController controller = DeskData.musicAllowed ? DeskData.media : null;
+        MediaMetadata track = controller == null ? null : controller.getMetadata();
+        String key = MusicLyrics.key(controller, track);
+        if (key == null) {
+            message(DeskData.musicAllowed ? "请先在播放器中选择一首曲目，再导入它的 LRC 歌词。"
+                    : "请先开启音乐访问，以识别当前曲目。");
+            return;
+        }
+        pendingLyricsKey = key;
+        pendingLyricsTitle = MusicLyrics.title(track);
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*");
+        try {
+            startActivityForResult(picker, IMPORT_MUSIC_LYRICS);
+        } catch (ActivityNotFoundException unavailable) {
+            pendingLyricsKey = pendingLyricsTitle = null;
+            message("此设备未提供文件选择器。");
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != IMPORT_MUSIC_LYRICS) return;
+        String key = pendingLyricsKey, title = pendingLyricsTitle;
+        pendingLyricsKey = pendingLyricsTitle = null;
+        Uri file = result == RESULT_OK && data != null ? data.getData() : null;
+        if (key == null || file == null) return;
+        Context context = getApplicationContext();
+        DeskData.IO.execute(() -> {
+            String notice;
+            try (InputStream input = context.getContentResolver().openInputStream(file)) {
+                if (input == null) throw new IOException();
+                String lrc = LrcLyrics.read(input).replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", "");
+                if (!LrcLyrics.parse(lrc).hasLines()) notice = "文件中没有带时间戳的歌词。";
+                else if (MusicLyrics.library(context).edit().putString(key, lrc).commit()) {
+                    notice = title == null || title.isEmpty() ? "已导入当前曲目的歌词"
+                            : "已导入「" + title + "」的歌词";
+                } else notice = "歌词保存失败，请重试。";
+            } catch (IOException | SecurityException unavailable) {
+                notice = "无法导入歌词，请选择 256 KB 以内的 LRC 文件。";
+            }
+            String status = notice;
+            handler.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                for (ClockFace preview : previews) preview.invalidate();
+                showNotice(status);
+            });
+        });
+    }
+
+    private void setSpectrumAccess(boolean enabled) {
+        if (!enabled || MusicSpectrum.allowed(this)) {
+            prefs.edit().putBoolean(MusicSpectrum.ENABLED, enabled).apply();
+            return;
+        }
+        requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, SPECTRUM_PERMISSION);
     }
 
     private boolean notificationsEnabled() {
@@ -1723,8 +1914,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         int at = 0;
         for (int i = 0; i < values.length; i++) if (values[i] == prefs.getInt(key, fallback)) at = i;
         UiKit.choice(this, host, label, names, at, n -> {
-            if (key.equals("focusMinutes")) DeskData.setFocusMinutes(prefs, values[n]);
-            else prefs.edit().putInt(key, values[n]).apply();
+            prefs.edit().putInt(key, values[n]).apply();
             show();
         });
     }
@@ -1923,10 +2113,23 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         });
     }
 
+    private boolean weatherLocationNeedsSettings() {
+        return prefs.getBoolean("weatherLocationAsked", false)
+            && !shouldShowRequestPermissionRationale(android.Manifest.permission.ACCESS_COARSE_LOCATION);
+    }
+
+    private void weatherLocationPermission() {
+        if (WeatherLocation.allowed(this) || weatherLocationNeedsSettings()) {
+            openAppPermissions();
+        } else {
+            requestPermissions(new String[] { android.Manifest.permission.ACCESS_COARSE_LOCATION },
+                WEATHER_LOCATION_SETTINGS_PERMISSION);
+        }
+    }
+
     private void useCurrentLocation() {
         if (!WeatherLocation.allowed(this)) {
-            if (prefs.getBoolean("weatherLocationAsked", false)
-                && !shouldShowRequestPermissionRationale(android.Manifest.permission.ACCESS_COARSE_LOCATION)) {
+            if (weatherLocationNeedsSettings()) {
                 AppDialogs.builder(this)
                     .setMessage("定位权限尚未开启，可在应用权限中允许位置信息，或继续搜索城市。")
                     .setPositiveButton("打开应用权限", (d, n) -> retryWeatherOnReturn =
@@ -1937,7 +2140,6 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
                     .show();
                 return;
             }
-            prefs.edit().putBoolean("weatherLocationAsked", true).apply();
             requestPermissions(new String[] { android.Manifest.permission.ACCESS_COARSE_LOCATION }, WEATHER_LOCATION_PERMISSION);
             return;
         }
@@ -2048,10 +2250,8 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
             show();
             return;
         }
-        if (portraitStyleScreen) {
-            componentPicker=false;portraitStyleScreen = false;
-            tab = 1;
-            show();
+        if (previewPicker != null) {
+            closePreviewPicker();
             return;
         }
         if (tab == 3) {
@@ -2063,15 +2263,17 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
     protected void onSaveInstanceState(Bundle out) {
         out.putString("pendingStandbyPermission", pendingStandbyPermission);
+        out.putString("pendingLyricsKey", pendingLyricsKey);
+        out.putString("pendingLyricsTitle", pendingLyricsTitle);
         out.putBoolean("returningFromComponentSettings", returningFromComponentSettings);
         out.putBoolean("retryWeatherOnReturn", retryWeatherOnReturn);
         rememberScroll();
         history.finish();
-        out.putInt("studioPanel",studioPanel);out.putBoolean("componentPicker",componentPicker);
+        out.putInt("studioPanel",studioPanel);
         out.putStringArrayList("undoStates",history.undoStates());out.putStringArrayList("redoStates",history.redoStates());
         out.putBoolean("pageOverview", pageOverview);
         out.putBoolean("navExpanded", navExpanded);
-        out.putBoolean("portraitStyleScreen", portraitStyleScreen);
+        if (previewPicker != null) out.putString("previewPicker", previewPicker.name());
         out.putString("libraryType", libraryType);
         out.putString("draft", draft.json());
         out.putString("baseline", baseline);
@@ -2162,9 +2364,21 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
-        if (request == WEATHER_LOCATION_PERMISSION) {
-            if (WeatherLocation.allowed(this)) useCurrentLocation();
-            else message("未获得定位权限，仍可搜索城市或使用经纬度设置天气地点。");
+        if (request == SPECTRUM_PERMISSION) {
+            prefs.edit().putBoolean(MusicSpectrum.ENABLED, MusicSpectrum.allowed(this)).apply();
+            show();
+            return;
+        }
+        if (request == WEATHER_LOCATION_PERMISSION || request == WEATHER_LOCATION_SETTINGS_PERMISSION) {
+            if (results.length == 0) return;
+            if (WeatherLocation.allowed(this)) {
+                prefs.edit().remove("weatherLocationAsked").apply();
+                if (request == WEATHER_LOCATION_PERMISSION) useCurrentLocation();
+                else show();
+            } else {
+                prefs.edit().putBoolean("weatherLocationAsked", true).apply();
+                message("未获得定位权限，仍可搜索城市或使用经纬度设置天气地点。");
+            }
             return;
         }
         if (!testMode) {
@@ -2199,7 +2413,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
         category = settingsGroup;
         settingsDetail = tabIndex == 3;
         studioPanel=tabIndex==0?1:0;
-        portraitStyleScreen = tabIndex==0;
+        previewPicker = tabIndex == 0 ? PreviewPicker.STYLE : null;
         navExpanded = false;
     }
     void inspectorForCheck(int group) { inspectorGroup=group;studioPanel=component().type.equals("clock")?(group==2?2:group==3?0:1):(group==1?2:0); }
@@ -2207,7 +2421,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
     void libraryForCheck(String type) {
         libraryType = type;
         tab = 0;
-        portraitStyleScreen=true;componentPicker=false;
+        previewPicker = PreviewPicker.STYLE;
     }
     boolean overviewForCheck() { return pageOverview; }
     PaletteEditor colorEditorForCheck() { return colorEditor; }

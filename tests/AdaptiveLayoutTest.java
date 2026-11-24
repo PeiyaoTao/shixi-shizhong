@@ -28,13 +28,42 @@ public class AdaptiveLayoutTest {
         check(!AdaptiveLayout.settingsUseTwoPanes(true,1000,229,1),"very short windows keep settings scrollable in one pane");
         check(AdaptiveLayout.settingsCanSpanHinge(390,440,480,1.3f),"a vertical hinge can separate settings panes");
         check(!AdaptiveLayout.settingsCanSpanHinge(390,280,480,1.3f),"a detail pane must fit beside the hinge");
-        check(AdaptiveLayout.galleryColumns(296, 700, 1, 6) == 2, "two styles fit on a 320dp cover display");
-        check(AdaptiveLayout.galleryColumns(296, 700, 2, 6) == 1, "large text reduces gallery columns");
-        check(AdaptiveLayout.galleryColumns(856, 320, 1, 5) == 5, "short landscape can show all five styles in one row");
-        check(AdaptiveLayout.galleryColumns(856, 320, 1, 6) == 3, "six styles balance across two rows when one is too narrow");
-        check(AdaptiveLayout.galleryWidth(1400, 900, 3) == 590, "wide windows cap card width");
-        check(AdaptiveLayout.galleryWidth(856, 320, 5) == 740, "short windows use smaller cards");
-        check(AdaptiveLayout.galleryWidth(108, 520, 1) == 108, "narrow windows constrain the card");
+        float component = AdaptiveLayout.COMPONENT_PREVIEW_ASPECT;
+        float page = AdaptiveLayout.PAGE_PREVIEW_ASPECT;
+        check(AdaptiveLayout.galleryColumns(296, 700, 1, 10, false, component) == 1, "component choices use full-width previews on narrow screens");
+        check(AdaptiveLayout.galleryColumns(797, 1088, 2, 10, false, component) == 1, "large text reduces component picker columns");
+        check(AdaptiveLayout.galleryColumns(856, 320, 1, 10, true, component) == 3, "landscape component picker limits density");
+        check(AdaptiveLayout.galleryColumns(569, 440, 1, 6, true, component) == 1, "landscape stacks when two full previews cannot fit");
+        check(AdaptiveLayout.galleryColumns(570, 440, 1, 6, true, component) == 2, "landscape adds a column when two 280dp previews fit");
+        check(AdaptiveLayout.galleryColumns(856, 320, 1, 6, true, component) == 3, "three usable previews fit in short landscape");
+        check(AdaptiveLayout.galleryColumns(1064, 821, 1, 6, true, component) == 3, "expanded landscape fits three large previews");
+        check(AdaptiveLayout.galleryColumns(1064, 821, 2, 6, true, component) == 2, "large landscape text leaves room for style names");
+        check(AdaptiveLayout.galleryWidth(852, 554, 1, 2, true, component) == 852, "large previews use the available landscape width");
+        check(AdaptiveLayout.galleryWidth(856, 320, 1, 3, true, component) == 809, "short landscape leaves room for the toolbar and captions");
+        check(AdaptiveLayout.galleryWidth(1600, 900, 1, 3, true, component) == 1340, "expansive landscape windows cap preview size");
+
+        check(AdaptiveLayout.galleryColumns(296, 700, 1, 6, false, component) == 1, "narrow portrait style picker stacks previews");
+        check(AdaptiveLayout.galleryWidth(296, 700, 1, 1, false, component) == 296, "narrow portrait previews use all available width");
+        check(AdaptiveLayout.galleryColumns(530, 876, 1, 5, false, component) == 1, "cover portrait uses a single column");
+        check(AdaptiveLayout.galleryWidth(530, 876, 1, 1, false, component) == 530, "cover portrait previews span the content width");
+        check(AdaptiveLayout.galleryColumns(797, 1088, 1, 6, false, component) == 2, "inner portrait fits two large previews");
+        check(AdaptiveLayout.galleryWidth(797, 1088, 1, 2, false, component) == 797, "inner portrait gives each preview about half the width");
+        check(AdaptiveLayout.galleryColumns(1056, 1440, 1, 6, false, component) == 2, "expanded portrait preserves large previews in two columns");
+        check(AdaptiveLayout.galleryColumns(797, 1088, 2, 6, false, component) == 1, "inner portrait stacks at large text sizes");
+        for (int[] window : new int[][]{{240, 400}, {360, 760}, {412, 915}, {480, 760}}) {
+            int contentWidth = window[0] - 24;
+            for (float fontScale : new float[]{1f, 2f}) {
+                int columns = AdaptiveLayout.galleryColumns(contentWidth, window[1], fontScale, 6, false, component);
+                check(columns == 1, "phone and split-screen portrait keep one column");
+                check(AdaptiveLayout.galleryWidth(contentWidth, window[1], fontScale, columns, false, component) == contentWidth,
+                        "phone and split-screen portrait previews fill the content width");
+            }
+        }
+        check(AdaptiveLayout.galleryWidth(1056, 1440, 1, 2, false, component) == 1056, "tablet portrait uses the available width");
+        check(AdaptiveLayout.galleryColumns(456, 320, 1, 4, true, page) == 1, "narrow landscape stacks the page layouts");
+        check(AdaptiveLayout.galleryColumns(852, 320, 1, 4, true, page) == 2, "short wide windows compare two page layouts");
+        check(AdaptiveLayout.galleryWidth(852, 320, 1, 2, true, page) == 682, "page preview ratio determines its height budget");
+        check(AdaptiveLayout.galleryWidth(530, 876, 1, 1, false, page) == 530, "cover portrait page previews span the content width");
         System.out.println("PASS: adaptive panes, threshold continuity, preview budgets and keyboard sizes");
     }
 }

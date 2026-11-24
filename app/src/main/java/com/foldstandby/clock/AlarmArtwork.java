@@ -7,8 +7,6 @@ final class AlarmArtwork {
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path=new Path();
     private final RectF rect=new RectF();
-    private final Matrix matrix=new Matrix();
-    private final float[] matrixValues=new float[9];
     private final Shader[] gradients=new Shader[TextGradients.COLORS.length];
     private final Typeface numerals=Typeface.create("sans-serif",Typeface.NORMAL);
     private int ink,secondary,plate,gradient;
@@ -17,16 +15,16 @@ final class AlarmArtwork {
 
     void palette(int primary,int secondary,int plate,int gradient){
         this.ink=primary;this.secondary=secondary;this.plate=plate;this.gradient=gradient;
+        if(gradient>0&&gradients[gradient]==null)gradients[gradient]=TextGradients.shader(gradient,-100,-107,100,96);
     }
     private int alpha(int color,int opacity){return Color.argb(opacity,Color.red(color),Color.green(color),Color.blue(color));}
     private void brush(int color,float width,boolean primary){
         paint.setShader(null);paint.setColor(color);paint.setStrokeWidth(width==0?0:Math.max(width,minimumStroke));
         paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setStyle(width==0?Paint.Style.FILL:Paint.Style.STROKE);
-        if(primary&&gradient>0){
-            if(gradients[gradient]==null)gradients[gradient]=TextGradients.unitShader(gradient);
-            TextGradients.applyBounds(gradients[gradient],matrix,matrixValues,-100,-107,100,96);
+        if(gradient>0&&color!=Color.BLACK){
             paint.setShader(gradients[gradient]);
+            if(!primary)paint.setAlpha(Math.min(paint.getAlpha(),color==plate?52:165));
         }
     }
     void draw(Canvas canvas,float x,float y,float size,int hour,int minute,boolean detailed){

@@ -208,12 +208,13 @@ final class Sandglass {
     private void funnelGrains(Canvas c,float level,float strength){
         float radius=width(level)*.86f;
         paint.setColor(highlight);
+        if(gradient>0)paint.setShader(shader);
         for(int i=0;i<24;i++){
             double t=(flowTime/(1300+i%5*110)+i*.381966)%1;
             float x=(i%2==0?-1:1)*radius*(float)(1-t*t),y=upperSurface(level,x,strength)+1+(i%3)*.7f;
             paint.setAlpha(65+i%4*20);c.drawCircle(CX+x,y,.4f+i%3*.13f,paint);
         }
-        paint.setAlpha(255);
+        paint.setShader(null);paint.setAlpha(255);
     }
     private void fall(Canvas c,float end,boolean moving){
         // Independent emission ages yield acceleration under gravity instead of a looping dotted line.
@@ -227,22 +228,24 @@ final class Sandglass {
         paint.setShader(null);paint.setAlpha(255);
         if(moving){
             paint.setColor(accent);
+            if(gradient>0)paint.setShader(shader);
             for(int i=0;i<9;i++){
                 float age=(float)((flowTime+i*43.7)%250)/1000f,side=i%2==0?-1:1;
                 float x=side*(2+(18+i%3*5)*age),y=end-(23+i%3*5)*age+165*age*age;
                 paint.setAlpha(Math.round(180*(1-age/.25f)));c.drawCircle(CX+x,y,.45f+i%2*.18f,paint);
             }
-            paint.setAlpha(255);
+            paint.setShader(null);paint.setAlpha(255);
         }
     }
     private void landslide(Canvas c,float peak){
         paint.setColor(accent);
+        if(gradient>0)paint.setShader(shader);
         for(int i=0;i<20;i++){
             float age=(float)((flowTime+i*81.3)%1100)/1000f,side=i%2==0?-1:1;
             float x=side*(1+12*age+31*age*age),y=lowerSurface(peak,x)-.7f;
             paint.setAlpha(Math.round(140*(1-age/1.1f)));c.drawCircle(CX+x,y,.4f+i%3*.1f,paint);
         }
-        paint.setAlpha(255);
+        paint.setShader(null);paint.setAlpha(255);
     }
     private void tiltedSand(Canvas c,float rotation,float turn){
         double gravity=Math.toRadians(rotation-10*Math.sin(turn*Math.PI));
@@ -270,12 +273,13 @@ final class Sandglass {
         paint.setStyle(Paint.Style.FILL);paint.setColor(accent);paint.setShader(shader);
         c.drawRoundRect(72,96,228,103,3,3,paint);c.drawRoundRect(72,309,228,316,3,3,paint);paint.setShader(null);
         paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.3f);paint.setColor(muted);
+        if(gradient>0){paint.setShader(shader);paint.setAlpha(165);}
         c.drawRoundRect(77,104,223,111,2,2,paint);c.drawRoundRect(77,301,223,308,2,2,paint);
-        paint.setStyle(Paint.Style.FILL);
+        paint.setShader(null);paint.setAlpha(255);paint.setStyle(Paint.Style.FILL);
     }
     private void stroke(Canvas c,Path path,int color,float width,int alpha){
-        paint.setShader(null);paint.setColor(color);paint.setAlpha(alpha);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(width);paint.setStrokeCap(Paint.Cap.ROUND);
-        c.drawPath(path,paint);paint.setStyle(Paint.Style.FILL);paint.setAlpha(255);
+        paint.setShader(gradient>0?shader:null);paint.setColor(color);paint.setAlpha(alpha);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(width);paint.setStrokeCap(Paint.Cap.ROUND);
+        c.drawPath(path,paint);paint.setShader(null);paint.setStyle(Paint.Style.FILL);paint.setAlpha(255);
     }
     float fractionForCheck(){return displayedFraction;}
     float angleForCheck(){return angle;}

@@ -20,6 +20,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 final class DeskData {
+    static final String FORECAST_URL="https://api.open-meteo.com/v1/forecast?";
     static final ExecutorService IO=Executors.newSingleThreadExecutor();
     static final ExecutorService NETWORK=Executors.newFixedThreadPool(2);
     static volatile String agenda="",todayAgenda="",weatherError="";
@@ -34,6 +35,8 @@ final class DeskData {
     private static SharedPreferences cachedScenePrefs;
     private static String cachedSceneJson;
     private static boolean cachedWantsWeather, cachedWantsAgenda, cachedWantsMusic;
+    private static final Set<ZoneId> worldDaylightZones=new LinkedHashSet<>();
+    private static boolean worldDaylightLocal;
     private static boolean calendarAllowed;
     private static void notifyObservers(){MAIN.post(()->{for(Runnable observer:new ArrayList<>(batteryObservers))observer.run();});}
     private static final BroadcastReceiver batteryReceiver=new BroadcastReceiver(){public void onReceive(Context context,Intent intent){updateBattery(intent);for(Runnable observer:new ArrayList<>(batteryObservers))observer.run();}};
@@ -86,7 +89,53 @@ final class DeskData {
         }
         return false;
     }
-    static String weatherUrl(String lat,String lon){double a=Double.parseDouble(lat),b=Double.parseDouble(lon);if(!Double.isFinite(a)||!Double.isFinite(b)||Math.abs(a)>90||Math.abs(b)>180)throw new IllegalArgumentException("Invalid location");return "https://api.open-meteo.com/v1/forecast?latitude="+a+"&longitude="+b+"&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=2&timezone=auto";}
+    static String weatherUrl(String lat,String lon){double a=Double.parseDouble(lat),b=Double.parseDouble(lon);if(!Double.isFinite(a)||!Double.isFinite(b)||Math.abs(a)>90||Math.abs(b)>180)throw new IllegalArgumentException("Invalid location");return FORECAST_URL+"latitude="+a+"&longitude="+b+"&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,"+WorldDaylight.DAILY_FIELDS+"&forecast_days=2&timeformat=unixtime&timezone=auto";}
+    private static void selectWorldDaylight(Scene scene, SharedPreferences prefs) {
+        worldDaylightZones.clear();
+        worldDaylightLocal = false;
+        for (Scene.Page page : scene.pages) {
+            worldDaylightLocal |= collectWorldDaylight(page, prefs, worldDaylightZones);
+        }
+    }
+    private static boolean collectWorldDaylight(Scene.Page page, SharedPreferences prefs, Set<ZoneId> zones) {
+        boolean includesLocal = false;
+        for (int i = 0; i < page.count(); i++) {
+            Scene.Component slot = page.slots[i];
+            if (slot.type.equals("world") && (slot.style.equals("world_orbit") || slot.style.equals("world_bands"))) {
+                zones.add(WorldDaylight.zone(slot, prefs));
+                includesLocal |= slot.style.equals("world_bands");
+            }
+        }
+        return includesLocal;
+    }
+    static void refreshWorldDaylightPreview(Context context, Scene.Page page, SharedPreferences prefs, Runnable onUpdated) {
+        Set<ZoneId> zones = new LinkedHashSet<>();
+        boolean includesLocal = collectWorldDaylight(page, prefs, zones);
+        if (includesLocal) refreshWeather(prefs, false, false, true, System.currentTimeMillis());
+        WorldDaylight.refresh(context.getApplicationContext(), zones, includesLocal, weather, onUpdated);
+    }
+    static void refreshWorldDaylight(Context context) {
+        if (worldDaylightLocal) {
+            refreshWeather(context.getSharedPreferences("clock",0), false, false, true, System.currentTimeMillis());
+        }
+        requestWorldDaylight(context.getApplicationContext());
+    }
+    private static void requestWorldDaylight(Context context) {
+        WorldDaylight.refresh(context, worldDaylightZones, worldDaylightLocal, weather, DeskData::notifyObservers);
+    }
+    private static void refreshWeather(SharedPreferences p, boolean wantsWeather, boolean force, boolean includesLocal, long now) {
+        if(weather==null&&p.contains("weatherCache"))try{weather=new JSONObject(p.getString("weatherCache",""));weatherAt=p.getLong("weatherAt",0);}catch(Exception ignored){}
+        JSONObject snapshot = weather;
+        JSONObject daily = snapshot == null ? null : snapshot.optJSONObject("daily");
+        boolean needsLocalForecast = includesLocal
+                && (daily == null || !daily.has("sunrise") || now - weatherAt >= 12 * 3600000L);
+        if((wantsWeather||needsLocalForecast||force)&&p.contains("city")&&!weatherBusy&&(force||now-attempted>retryAfterMs())){
+            weatherBusy=true;attempted=now;String lat=p.getString("lat","0"),lon=p.getString("lon","0");
+            NETWORK.execute(()->{try{JSONObject result=get(weatherUrl(lat,lon));result.getJSONObject("current").getDouble("temperature_2m");result.getJSONObject("daily").getJSONArray("temperature_2m_max").getDouble(0);
+                if(lat.equals(p.getString("lat",""))&&lon.equals(p.getString("lon",""))){weather=result;weatherAt=System.currentTimeMillis();weatherError="";weatherFailures=0;p.edit().putString("weatherCache",result.toString()).putLong("weatherAt",weatherAt).apply();notifyObservers();}else attempted=0;
+            }catch(Exception e){if(lat.equals(p.getString("lat",""))&&lon.equals(p.getString("lon",""))){weatherError=networkError(e);weatherFailures++;notifyObservers();}else attempted=0;}finally{weatherBusy=false;}});
+        }
+    }
     static long retryAfterMs(){return weatherFailures==0?900000L:Math.min(900000L,60000L*(1L<<Math.min(4,weatherFailures-1)));}
     private static final DateTimeFormatter FMT_HM=DateTimeFormatter.ofPattern("HH:mm");
     static String readAgenda(Context c,long start,long end){StringBuilder s=new StringBuilder();try{Uri.Builder b=CalendarContract.Instances.CONTENT_URI.buildUpon();ContentUris.appendId(b,start);ContentUris.appendId(b,end);try(Cursor rows=c.getContentResolver().query(b.build(),new String[]{"title","begin","allDay"},"visible=1",null,"begin ASC")){int n=0;while(rows!=null&&rows.moveToNext()&&n++<4){String time=rows.getInt(2)==1?"全天":Instant.ofEpochMilli(rows.getLong(1)).atZone(ZoneId.systemDefault()).format(FMT_HM);s.append(time).append("  ").append(rows.getString(0)==null?"日程":rows.getString(0)).append('\n');}}return s.length()==0?"暂无日程":s.toString().trim();}catch(Exception e){return "日历不可用";}}
@@ -98,19 +147,15 @@ final class DeskData {
             Scene scene=Scene.load(p);
             cachedScenePrefs=p;cachedSceneJson=rawScene;
             cachedWantsWeather=wants(scene,"weather");
+            selectWorldDaylight(scene,p);
             boolean includesAgenda = wantsAgenda(scene);
             if (includesAgenda != cachedWantsAgenda) agendaAt = 0L;
             cachedWantsAgenda=includesAgenda;
             cachedWantsMusic=wants(scene,"music");
         }
         boolean wantsWeather=cachedWantsWeather,wantsAgenda=cachedWantsAgenda,wantsMusic=cachedWantsMusic;
-        if(weather==null&&p.contains("weatherCache"))try{weather=new JSONObject(p.getString("weatherCache",""));weatherAt=p.getLong("weatherAt",0);}catch(Exception ignored){}
-        if((wantsWeather||force)&&p.contains("city")&&!weatherBusy&&(force||now-attempted>retryAfterMs())){
-            weatherBusy=true;attempted=now;String city=p.getString("city","");String lat=p.getString("lat","0"),lon=p.getString("lon","0");
-            NETWORK.execute(()->{try{JSONObject result=get(weatherUrl(lat,lon));result.getJSONObject("current").getDouble("temperature_2m");result.getJSONObject("daily").getJSONArray("temperature_2m_max").getDouble(0);
-                if(lat.equals(p.getString("lat",""))&&lon.equals(p.getString("lon",""))){weather=result;weatherAt=System.currentTimeMillis();weatherError="";weatherFailures=0;p.edit().putString("weatherCache",result.toString()).putLong("weatherAt",weatherAt).apply();notifyObservers();}else attempted=0;
-            }catch(Exception e){if(lat.equals(p.getString("lat",""))&&lon.equals(p.getString("lon",""))){weatherError=networkError(e);weatherFailures++;notifyObservers();}else attempted=0;}finally{weatherBusy=false;}});
-        }
+        refreshWeather(p,wantsWeather,force,worldDaylightLocal,now);
+        requestWorldDaylight(c);
         boolean calendarAccess=wantsAgenda && c.checkSelfPermission(Manifest.permission.READ_CALENDAR)==PackageManager.PERMISSION_GRANTED;
         if(calendarAccess!=calendarAllowed){calendarAllowed=calendarAccess;agendaAt=0L;if(!calendarAccess){agenda="";todayAgenda="";}}
         if(calendarAccess&&!agendaBusy&&(force||now-agendaAt>60000)){
@@ -131,10 +176,35 @@ final class DeskData {
             else if(media==null||!media.getSessionToken().equals(candidate.getSessionToken()))media=candidate;
         }
     }
-    static String condition(int code){if(code==0)return "晴";if(code<=3)return "多云";if(code<=48)return "雾";if(code<=67)return "雨";if(code<=77)return "雪";if(code<=82)return "阵雨";if(code<=86)return "阵雪";return "雷雨";}
-    static long remaining(SharedPreferences p){long end=p.getLong("focusEnd",0);return end==0?p.getLong("focusLeft",p.getInt("focusMinutes",25)*60000L):Math.max(0,end-SystemClock.elapsedRealtime());}
+    static String condition(int code){
+        if(code<0)return "天气未知";
+        if(code==0)return "晴";
+        if(code==1)return "少云";
+        if(code==2)return "多云";
+        if(code==3)return "阴";
+        if(code<=49)return "雾";
+        if(code==56||code==57||code==66||code==67)return "冻雨";
+        if(code<=55)return "毛毛雨";
+        if(code==61)return "小雨";
+        if(code==63)return "中雨";
+        if(code==65)return "大雨";
+        if(code<=69)return "雨";
+        if(code==71)return "小雪";
+        if(code==73)return "中雪";
+        if(code==75)return "大雪";
+        if(code<=79)return "雪";
+        if(code<=84)return "阵雨";
+        if(code<=89)return "阵雪";
+        if(code==96||code==99)return "雷雹";
+        return "雷雨";
+    }
+    static int focusMinutes(SharedPreferences p) {
+        return FocusDuration.clamp(p.getInt("focusMinutes", FocusDuration.DEFAULT_MINUTES));
+    }
+    static long remaining(SharedPreferences p){long end=p.getLong("focusEnd",0);return end==0?p.getLong("focusLeft",focusMinutes(p)*60000L):Math.max(0,end-SystemClock.elapsedRealtime());}
     static void toggleFocus(SharedPreferences p){if(p.getLong("focusEnd",0)>0&&remaining(p)>0)p.edit().putLong("focusLeft",remaining(p)).putLong("focusEnd",0).apply();else{long left=remaining(p);if(left==0){resetFocus(p);left=remaining(p);}p.edit().putLong("focusEnd",SystemClock.elapsedRealtime()+left).putLong("focusBoot",System.currentTimeMillis()-SystemClock.elapsedRealtime()).apply();}}
     static void setFocusMinutes(SharedPreferences prefs, int minutes) {
+        minutes = FocusDuration.clamp(minutes);
         long oldTotal = focusTotal(prefs);
         long remaining = remaining(prefs);
         boolean ready = prefs.getLong("focusEnd", 0) == 0 && (remaining == oldTotal || remaining == 0);
@@ -149,10 +219,10 @@ final class DeskData {
         edit.apply();
     }
     static long focusTotal(SharedPreferences prefs) {
-        return Math.max(1, prefs.getLong("focusTotal", prefs.getInt("focusMinutes", 25) * 60000L));
+        return Math.max(1, prefs.getLong("focusTotal", focusMinutes(prefs) * 60000L));
     }
     static void resetFocus(SharedPreferences p){
-        long total=Math.max(1,p.getInt("focusMinutes",25))*60000L,oldTotal=Math.max(1,p.getLong("focusTotal",total));
+        long total=focusMinutes(p)*60000L,oldTotal=Math.max(1,p.getLong("focusTotal",total));
         float from=Math.max(0,Math.min(1,remaining(p)/(float)oldTotal));
         p.edit().putLong("focusEnd",0).putLong("focusLeft",total).putLong("focusTotal",total)
             .putLong("focusResetAt",SystemClock.elapsedRealtime()).putFloat("focusResetFrom",from).apply();

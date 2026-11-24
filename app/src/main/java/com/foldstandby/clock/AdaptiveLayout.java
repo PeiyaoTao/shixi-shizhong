@@ -3,6 +3,8 @@ package com.foldstandby.clock;
 /** Layout policy depends on available space, including height and text scaling. */
 final class AdaptiveLayout {
     static final int GALLERY_GAP = 10;
+    static final float COMPONENT_PREVIEW_ASPECT = 5f / 4f;
+    static final float PAGE_PREVIEW_ASPECT = 8f / 5f;
 
     final boolean parallel;
     final int rail,left;
@@ -21,17 +23,28 @@ final class AdaptiveLayout {
         return categoriesWidth >= Math.round(152 * textFactor)
                 && detailWidth >= Math.round(300 * textFactor) && height >= 230;
     }
-    static int galleryColumns(int width, int height, float fontScale, int optionCount) {
-        int minCardWidth = Math.round(140 * Math.max(1f, fontScale * .8f));
-        int fittingColumns = Math.max(1, Math.min(optionCount, (width + GALLERY_GAP) / (minCardWidth + GALLERY_GAP)));
-        if (height >= 440 || width <= height) fittingColumns = Math.min(3, fittingColumns);
+    static int galleryColumns(int width, int height, float fontScale, int optionCount,
+                              boolean landscape, float aspect) {
+        float textFactor = Math.max(1f, fontScale * .8f);
+        int preferredWidth = Math.round((landscape ? 280 : 320) * textFactor);
+        int minWidth = Math.min(preferredWidth, galleryPreviewWidth(height, fontScale, landscape, aspect));
+        int fittingColumns = Math.max(1, Math.min(optionCount, (width + GALLERY_GAP) / (minWidth + GALLERY_GAP)));
+        if (!landscape) fittingColumns = Math.min(2, fittingColumns);
         // Keep the same row count while distributing options more evenly.
         int rows = (optionCount + fittingColumns - 1) / fittingColumns;
         return (optionCount + rows - 1) / rows;
     }
-    static int galleryWidth(int availableWidth, int height, int columns) {
-        int maxCardWidth = Math.max(140, Math.min(190, height / 3));
-        return Math.min(availableWidth, columns * maxCardWidth + (columns - 1) * GALLERY_GAP);
+    static int galleryWidth(int availableWidth, int height, float fontScale, int columns,
+                            boolean landscape, float aspect) {
+        int maxWidth = galleryPreviewWidth(height, fontScale, landscape, aspect);
+        return Math.min(availableWidth, columns * maxWidth + (columns - 1) * GALLERY_GAP);
+    }
+
+    private static int galleryPreviewWidth(int height, float fontScale, boolean landscape, float aspect) {
+        // Leave room for the toolbar, scroll padding, and caption in the first row.
+        int controlsHeight = 110 + Math.round(60 * Math.max(0f, fontScale - 1f));
+        int width = Math.round((height - controlsHeight) * aspect);
+        return Math.max(224, Math.min(landscape ? 440 : 560, width));
     }
     static int previewHeight(int width,int height,boolean keyboard,float fontScale,float aspect){
         int reserve=Math.round(210*Math.max(1f,fontScale*.75f));

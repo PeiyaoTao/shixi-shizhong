@@ -36,7 +36,7 @@ final class StudioChecks {
         context=runner.getTargetContext();prefs=context.getSharedPreferences("ui_checks",0);Map<String,?> original=prefs.getAll();
         output=new File(context.getFilesDir(),"qa-0.5.1");output.mkdirs();Bundle result=new Bundle();
         try{
-            sync(()->{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",false).putBoolean("studio_guided",true).commit();models();layouts();settingsChecks();carouselChecks();});
+            sync(()->{prefs.edit().clear().putBoolean("night",false).putBoolean("motion",false).putBoolean("studio_guided",true).commit();models();layouts();previewPickers();settingsChecks();carouselChecks();});
             runtime();result.putBoolean("passed",true);result.putString("result","PASS: "+checks+" studio checks, "+renders+" renders; keyboard, rotation, selection, undo and recovery");
         }catch(Throwable t){result.putBoolean("passed",false);result.putString("result",android.util.Log.getStackTraceString(t));}
         finally{sync(()->{if(live!=null)live.finish();SharedPreferences.Editor e=prefs.edit().clear();for(Map.Entry<String,?> entry:original.entrySet()){Object v=entry.getValue();String k=entry.getKey();if(v instanceof String)e.putString(k,(String)v);else if(v instanceof Boolean)e.putBoolean(k,(Boolean)v);else if(v instanceof Integer)e.putInt(k,(Integer)v);else if(v instanceof Long)e.putLong(k,(Long)v);else if(v instanceof Float)e.putFloat(k,(Float)v);else if(v instanceof Set)e.putStringSet(k,new HashSet<>((Set<String>)v));}e.commit();});}
@@ -114,7 +114,60 @@ final class StudioChecks {
         set(editor,"studioPanel",2);
         View imeSized=editor.createUi(400,820);draw(imeSized,UiKit.dp(context,400),UiKit.dp(context,260),"editor-ime-small");bounds(imeSized);
         check(((View)imeSized.findViewWithTag("studio:body").getParent()).getHeight()>=UiKit.dp(context,48),"short IME editor retains usable scroll area");
-        set(editor,"portraitStyleScreen",true);for(int[] size:new int[][]{{320,480},{820,400},{700,980}}){View root=editor.createUi(size[0],size[1]);draw(root,UiKit.dp(context,size[0]),UiKit.dp(context,size[1]),"selector-"+size[0]+"x"+size[1]);bounds(root);}
+        editor.selectForCheck(0,0);for(int[] size:new int[][]{{320,480},{820,400},{700,980}}){View root=editor.createUi(size[0],size[1]);draw(root,UiKit.dp(context,size[0]),UiKit.dp(context,size[1]),"selector-"+size[0]+"x"+size[1]);bounds(root);}
+    }
+
+    private void previewPickers() {
+        MainActivity editor = new MainActivity();
+        editor.prepareForCheck(context);
+        String before = editor.draft.json();
+        for (boolean adding : new boolean[]{true, false}) {
+            call(editor, "showLayoutPicker", new Class[]{boolean.class}, adding);
+            for (int[] window : new int[][]{{320,480}, {554,876}, {820,1088}, {480,320}, {876,320}, {980,700}}) {
+                activeCase = (adding ? "add page " : "page layout ") + window[0] + "x" + window[1];
+                View root = editor.createUi(window[0], window[1]);
+                String screenshot = adding ? "add-page-" + window[0] + "x" + window[1] : null;
+                draw(root, UiKit.dp(context, window[0]), UiKit.dp(context, window[1]), screenshot);
+                bounds(root);
+                for (int layout = 0; layout < Dashboard.LAYOUTS.length; layout++) {
+                    View tile = root.findViewWithTag("page-layout:" + layout);
+                    check(tile != null && tile.getBackground() == null, "page preview has no outer card");
+                    ClockFace face = face(tile);
+                    check(face.getWidth() == tile.getWidth() && face.getHeight() > UiKit.dp(context, 110), "page preview fills a larger frame");
+                    check(Math.abs(face.getWidth() - face.getHeight() * AdaptiveLayout.PAGE_PREVIEW_ASPECT) < 4, "page preview preserves its ratio");
+                    check(!face.hasSubpages(), "layout preview contains every slot");
+                    check(tile.isSelected() == (!adding && editor.draft.pages.get(editor.draft.homeIndex()).layout == layout),
+                            "only the existing layout is marked selected");
+                }
+                View first = root.findViewWithTag("page-layout:0");
+                View second = root.findViewWithTag("page-layout:1");
+                if (window[0] == 320 || window[0] == 554) {
+                    check(first.getParent() != second.getParent(), "narrow portrait stacks page previews");
+                    check(Math.abs(first.getWidth() - UiKit.dp(context, window[0] - 24)) <= 1, "single-column layout uses the available width");
+                }
+                if (window[0] == 980) check(first.getParent() == second.getParent(), "wide landscape compares layouts side by side");
+                check(editor.draft.json().equals(before), "browsing layout choices leaves the scene intact");
+            }
+        }
+        activeCase = "page layout next to a hinge";
+        Rect hinge = new Rect(UiKit.dp(context, 400), 0, UiKit.dp(context, 420), UiKit.dp(context, 554));
+        editor.foldForCheck(hinge);
+        View folded = editor.createUi(876, 554);
+        draw(folded, UiKit.dp(context, 876), UiKit.dp(context, 554), null);
+        for (int layout = 0; layout < Dashboard.LAYOUTS.length; layout++) {
+            check(!Rect.intersects(hinge, position(folded.findViewWithTag("page-layout:" + layout), folded)),
+                    "layout choices avoid the hinge");
+        }
+
+        activeCase = "replace component in phone portrait";
+        editor.foldForCheck(null);
+        call(editor, "openSelector", new Class[]{boolean.class}, true);
+        View components = editor.createUi(360, 780);
+        draw(components, UiKit.dp(context, 360), UiKit.dp(context, 780), "component-picker-360x780");
+        bounds(components);
+        View weather = components.findViewWithTag("component:weather");
+        check(weather != null && weather.getBackground() == null, "component picker uses the same border around the preview");
+        check(face(weather).getWidth() == UiKit.dp(context, 336), "component previews use the phone width");
     }
     private void carouselChecks(){
         prefs.edit().putFloat("uiFontScale",1).commit();Scene scene=sample();scene.pages.clear();
@@ -208,6 +261,9 @@ final class StudioChecks {
         detail = editor.createUi(360, 540);
         check(textPrefix(detail, "轮播间隔") != null && textPrefix(detail, "夜间闲置回主页") != null,
             "the idle fallback is specifically marked for night when autoplay is enabled");
+        editor.selectForCheck(3, 2);
+        detail = editor.createUi(360, 540);
+        check(textPrefix(detail, "默认专注时长 · ") != null, "data settings show focus duration row");
 
         editor.selectForCheck(3, 4);
         String sceneName = editor.draft.name;
@@ -275,6 +331,46 @@ final class StudioChecks {
             check(prefs.getInt("nightStartMinute", 0) == 30 && prefs.getInt("nightEndMinute", 0) == 15,
                 "overnight start and end save together");
         });
+        sync(() -> {
+            DeskData.setFocusMinutes(prefs, 25);
+            call(live, "showFocusDuration");
+        });
+        runner.waitForIdleSync();
+        sync(() -> {
+            InputDialog focusDialog = (InputDialog) get(live, "inputDialog");
+            View decor = focusDialog.getWindow().getDecorView();
+            FocusDurationPicker picker = decor.findViewWithTag("focus:duration-picker");
+            TextView summaryView = decor.findViewWithTag("focus:duration-summary");
+            check(picker != null && summaryView != null, "focus duration picker dialog opens");
+            check(picker.hours() == 0 && picker.minutes() == 25, "picker initializes from saved duration");
+            picker.setHoursMinutes(0, 0, false);
+            check(summaryView.getText().toString().contains("至少为 1 分钟"), "zero duration shows validation message");
+            text(decor, "应用").performClick();
+            check(focusDialog.isShowing() && prefs.getInt("focusMinutes", 0) == 25, "zero duration prevents applying");
+            picker.setHoursMinutes(1, 35, false);
+            check(summaryView.getText().toString().equals("共 1 小时 35 分钟"), "picker updates live duration summary");
+        });
+        runner.waitForIdleSync();
+        sync(() -> {
+            InputDialog focusDialog = (InputDialog) get(live, "inputDialog");
+            View decor = focusDialog.getWindow().getDecorView();
+            draw(decor, decor.getMeasuredWidth(), decor.getMeasuredHeight(), "dialog-focus-duration");
+            text(decor, "应用").performClick();
+            check(!focusDialog.isShowing() && prefs.getInt("focusMinutes", 0) == 95, "custom hours and minutes save");
+            call(live, "showFocusDuration");
+        });
+        runner.waitForIdleSync();
+        sync(() -> {
+            InputDialog focusDialog = (InputDialog) get(live, "inputDialog");
+            View decor = focusDialog.getWindow().getDecorView();
+            FocusDurationPicker picker = decor.findViewWithTag("focus:duration-picker");
+            check(picker.hours() == 1 && picker.minutes() == 35, "reopening preserves saved custom hours and minutes");
+            text(decor, "45 分钟").performClick();
+            check(picker.hours() == 0 && picker.minutes() == 45, "preset chip selects hours and minutes");
+            text(decor, "应用").performClick();
+            check(!focusDialog.isShowing() && prefs.getInt("focusMinutes", 0) == 45, "preset chip selection saves");
+            DeskData.setFocusMinutes(prefs, 25);
+        });
     }
     private EditText findEdit(View root){if(root instanceof EditText)return(EditText)root;if(root instanceof ViewGroup)for(int i=0;i<((ViewGroup)root).getChildCount();i++){EditText found=findEdit(((ViewGroup)root).getChildAt(i));if(found!=null)return found;}return null;}
     private Rect position(View v,View root){Rect rect=new Rect(0,0,v.getWidth(),v.getHeight());((ViewGroup)root).offsetDescendantRectToMyCoords(v,rect);return rect;}
@@ -295,7 +391,35 @@ final class StudioChecks {
         sync(()->{View type=live.getWindow().getDecorView().findViewWithTag("component:weather");check(type!=null,"explicit component selector");type.performClick();check(live.draft.pages.get(0).slots[0].type.equals("weather"),"component selector replaces current region");call(live,"undoEdit");check(live.draft.pages.get(0).slots[0].type.equals("clock"),"undo returns previous component");});
         sync(()->{int count=live.draft.pages.size();String home=live.draft.home;call(live,"showPageMenu");AlertDialog menu=(AlertDialog)get(live,"studioDialog");ListView list=menu.getListView();int last=list.getCount()-1;list.performItemClick(null,last,list.getAdapter().getItemId(last));check(live.draft.pages.size()==count-1,"page menu deletes page");call(live,"undoEdit");check(live.draft.pages.size()==count&&live.draft.home.equals(home),"undo restores page position and home identity");});
         sync(()->call(live,"showLayoutPicker",new Class[]{boolean.class},true));runner.waitForIdleSync();
-        sync(()->{InputDialog picker=(InputDialog)get(live,"inputDialog");check(picker!=null&&picker.isShowing(),"visual layout chooser");View choice=text(picker.getWindow().getDecorView(),"使用双栏");check(choice!=null,"layout card has explicit action");int old=live.draft.pages.size();choice.performClick();check(live.draft.pages.size()==old+1&&live.draft.pages.get(old).layout==1,"layout selection creates complete page");call(live,"undoEdit");check(live.draft.pages.size()==old,"undo removes added page");});
+        sync(()->{
+            View choice = live.getWindow().getDecorView().findViewWithTag("page-layout:1");
+            check(choice != null && choice.isClickable(), "page preview offers one direct action");
+            int old = live.draft.pages.size();
+            choice.performClick();
+            check(live.draft.pages.size() == old + 1, "layout selection adds one page");
+            Scene.Page added = live.draft.pages.get(old);
+            check(added.layout == 1 && added.slots[0].type.equals("clock") && added.slots[1].type.equals("weather"),
+                    "added page uses the layout and displayed defaults");
+            call(live, "undoEdit");
+            check(live.draft.pages.size() == old, "undo removes added page");
+
+            String before = live.draft.json();
+            call(live, "showLayoutPicker", new Class[]{boolean.class}, false);
+            live.onBackPressed();
+            check(live.draft.json().equals(before), "back dismisses the layout picker without an edit");
+
+            Scene.Page page = live.draft.pages.get(live.draft.index((String)get(live, "pageId")));
+            int previousLayout = page.layout;
+            String hiddenSlot = page.slots[2].json().toString();
+            call(live, "showLayoutPicker", new Class[]{boolean.class}, false);
+            View decor = live.getWindow().getDecorView();
+            check(decor.findViewWithTag("page-layout:" + previousLayout).isSelected(), "current page layout is selected");
+            int newLayout = previousLayout == 0 ? 1 : 0;
+            decor.findViewWithTag("page-layout:" + newLayout).performClick();
+            check(page.layout == newLayout && page.slots[2].json().toString().equals(hiddenSlot), "layout change preserves hidden components");
+            call(live, "undoEdit");
+            check(live.draft.json().equals(before), "undo restores the previous layout and components");
+        });
         dialogChecks();
         Instrumentation.ActivityMonitor monitor=runner.addMonitor(ClockActivity.class.getName(),null,false);
         sync(()->{set(live,"pageId",live.draft.pages.get(1).id);set(live,"previewNight",true);call(live,"launchFullscreenPreview");});

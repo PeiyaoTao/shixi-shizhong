@@ -33,7 +33,7 @@ final class Scene {
         JSONObject styleOptions(){JSONObject j=styles.optJSONObject(style);if(j==null){j=new JSONObject();put(styles,style,j);}return j;}
         boolean bool(String key,boolean fallback){return options.optBoolean(key,fallback);}
         JSONObject json(){JSONObject j=new JSONObject();put(j,"id",id);put(j,"type",type);put(j,"style",ComponentStyles.selected(this));put(j,"theme",theme);put(j,"nightTheme",nightTheme);put(j,"options",options);put(j,"styles",styles);return j;}
-        static Component from(JSONObject j){Component c=new Component();if(j==null)return c;c.id=j.optString("id",c.id);c.type=valid(j.optString("type"),TYPES,"clock");String[] available=ComponentStyles.ids(c.type);c.style=valid(j.optString("style"),available,available[0]);c.theme=object(j,"theme");c.nightTheme=object(j,"nightTheme");c.options=object(j,"options");c.styles=object(j,"styles");c.ensureStyles();return c;}
+        static Component from(JSONObject j){Component c=new Component();if(j==null)return c;c.id=j.optString("id",c.id);c.type=valid(j.optString("type"),TYPES,"clock");c.theme=object(j,"theme");c.nightTheme=object(j,"nightTheme");c.options=object(j,"options");c.styles=object(j,"styles");c.style=ComponentStyles.restore(c,j.optString("style"));c.ensureStyles();return c;}
     }
     static final class Page {
         String id=UUID.randomUUID().toString(),name="时间";int layout;boolean autoName=true;
