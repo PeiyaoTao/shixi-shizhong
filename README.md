@@ -7,6 +7,11 @@
 - **独立待办与提醒**：多清单、9 大视图、重复规则、子任务、到期提醒通知与锁屏隐私开关，横竖屏与折痕自适应双栏浏览及编辑。
 - **多形态待机**：支持手动开始待机、充电静置自动待机及折叠屏帐篷/支架姿态识别；自动避让系统安全区与物理折痕，窄小窗口自动分拆临时子页，竖向受限窗口内时钟画布固定顺时针旋转 90°。
 
+## 下载正式安装包
+
+- **专用正式包目录（仅含各版本正式 APK）**：[releases/](https://github.com/PeiyaoTao/shixi-shizhong/tree/main/releases)
+- **最新版直接下载（0.5.13）**：[时栖时钟-0.5.13-正式版.apk](https://github.com/PeiyaoTao/shixi-shizhong/raw/main/releases/%E6%97%B6%E6%A0%96%E6%97%B6%E9%92%9F-0.5.13-%E6%AD%A3%E5%BC%8F%E7%89%88.apk)（仓库内路径：[releases/时栖时钟-0.5.13-正式版.apk](releases/时栖时钟-0.5.13-正式版.apk)）
+
 ## 目录结构
 
 - `app/src/main/java/com/foldstandby/clock/`：应用主源码（工作台与导航 `MainActivity`、待机渲染 `ClockActivity` / `ClockStage` / `ClockFace` / `ClockLayout` / `Sandglass`、自适应策略 `AdaptiveLayout`、待办系统 `TodoActivity` / `TodoEditor` / `TodoStore` / `TodoViewport` / `TodoReminders`、姿态与外屏门限 `StandbyService` / `PostureGate` / `ChargingStandbyGate` / `Fold` 等）。
@@ -14,11 +19,14 @@
 - `tests/`：纯 Java 单元测试及真机截图/QA 导出脚本（`ExportQa.ps1`、`Snapshot.ps1`）。
 - `tools/render_branding.py`：从 Android 矢量资源导出品牌预览图与 PNG/SVG 图标（需要 Pillow）。
 - `third_party/fold-toggle/`：第三方开源许可与外屏控制原始来源（详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)），核心术语定义见 [GLOSSARY.md](GLOSSARY.md)。
+- `releases/`：仅包含各版本正式 APK 安装包的专用下载目录。
 - `dist/`：各版本正式/调试安装包、验证记录与截图存档。
 
 ## 0.5.13
 
+- 专注计时支持自定义时长：数据设置与专注组件检查器均提供类似闹钟的左右 `小时 : 分钟` 双滚轮选择器（支持 1 分钟至 23 小时 59 分钟，保留快捷预设芯片），全部 5 种专注样式适配跨小时倒计时显示。
 - 世界时钟的昼夜轨道、双城时带、日程时间轴和闹钟时刻尺跟随组件主题渐变。十类组件的刻度、标签、进度、图标与图形细节也跟随日间主题渐变。
+- [正式安装包](releases/时栖时钟-0.5.13-正式版.apk)
 
 ## 0.5.12
 
