@@ -427,7 +427,7 @@ final class ComponentInspector {
         LinearLayout lyrics = UiKit.card(c, container, "歌词", null);
         UiKit.toggle(c, lyrics, "联网查找歌词", OnlineLyrics.enabled(prefs),
                 enabled -> prefs.edit().putBoolean(MusicLyrics.ONLINE, enabled).apply());
-        UiKit.note(c, lyrics, "优先读取播放器原生歌词（元数据、状态栏歌词、蓝牙歌词与歌词广播）；未提供时自动向 LRCLIB 匹配。");
+        UiKit.note(c, lyrics, "优先读取播放器原生歌词（元数据、状态栏、蓝牙与广播）；未提供时自动匹配在线同步歌词（支持网易云直取与 LRCLIB）。");
         UiKit.action(c, lyrics, "换歌词版本  ›", host::onChooseMusicLyrics);
         UiKit.action(c, lyrics, "调整歌词时间  ›", host::onAdjustMusicLyrics);
         UiKit.action(c, lyrics, "导入当前曲目的 LRC 歌词  ›", host::onImportMusicLyrics);

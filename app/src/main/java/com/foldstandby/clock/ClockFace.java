@@ -1315,6 +1315,12 @@ public final class ClockFace extends View {
             if (timeline == null || !timeline.hasLines()) timeline = retainedLiveLyrics;
             if (timeline != null && timeline.hasLines()) {
                 boolean live = timeline.isLive();
+                if (live && onlineTrack != null && onlineTrack.neteaseSongId() != null && position >= 0) {
+                    boolean start = tracking && (externalTick || editorSlot == drawingSlot) && testTime < 0
+                            && motionActive && isAttachedToWindow() && getWindowVisibility() == VISIBLE
+                            && isShown() && getGlobalVisibleRect(visibleMusicRect);
+                    OnlineLyrics.automatic(getContext(), onlineTrack, start, this::invalidate);
+                }
                 int offset = live ? 0 : MusicLyrics.offset(getContext(), trackKey);
                 int index = live ? timeline.lineCount() - 1 : timeline.indexAt(pos + offset);
                 long next = live ? Long.MAX_VALUE : timeline.nextTime(index);
@@ -1328,7 +1334,8 @@ public final class ClockFace extends View {
                 highlightLyric = index == currentLyric;
             } else if (onlineTrack != null) {
                 if (position < 0) lookupStatus = "等待播放器提供进度";
-                else if (controller != null && MusicLyrics.hasRecentLiveSource(controller.getPackageName()) && pos < 3500L) {
+                else if (onlineTrack.neteaseSongId() == null && controller != null
+                        && MusicLyrics.hasRecentLiveSource(controller.getPackageName()) && pos < 3500L) {
                     if (tracking) {
                         long delay = Math.max(16L, (long) Math.ceil((3500L - pos) / (double) speed));
                         nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
@@ -1393,6 +1400,9 @@ public final class ClockFace extends View {
                 }
                 if (playerTimeline != null && playerTimeline.hasLines()) return playerTimeline;
             }
+        }
+        if (source == null && position >= 0 && track != null && track.neteaseSongId() != null) {
+            source = OnlineLyrics.cache(context).getString(track.signature, null);
         }
         if (source == null) {
             LrcLyrics live = MusicLyrics.liveLyrics(controller, meta);

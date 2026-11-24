@@ -109,7 +109,9 @@ final class OnlineLyrics {
     }
 
     static Status automatic(Context context, MusicLyrics.Track track, boolean start, Runnable redraw) {
-        if (!track.searchable() || track.duration <= 0) return Status.INCOMPLETE_TRACK;
+        if (!track.searchable() || (track.duration <= 0 && track.neteaseSongId() == null)) {
+            return Status.INCOMPLETE_TRACK;
+        }
         Attempt previous = ATTEMPTED.get(track.signature);
         if (previous != null && (!start || SystemClock.elapsedRealtime() - previous.at < RETRY_MILLIS)) {
             return previous.status;
@@ -192,6 +194,14 @@ final class OnlineLyrics {
     }
 
     private static SearchResult fetch(MusicLyrics.Track track) {
+        String neteaseId = track.neteaseSongId();
+        if (neteaseId != null) {
+            SearchResult direct = fetchNeteaseById(track, neteaseId);
+            if (direct != null && direct.failure == null && !direct.candidates.isEmpty()) return direct;
+            if (track.title.isEmpty() || track.artist.isEmpty()) {
+                return direct != null ? direct : new SearchResult(Collections.emptyList(), null);
+            }
+        }
         if (SystemClock.elapsedRealtime() < blockedUntil) return SearchResult.unavailable();
         String cleanedArtist = cleanArtist(track.artist);
         List<String> tokens = artistTokens(cleanedArtist);
@@ -223,6 +233,64 @@ final class OnlineLyrics {
             if (broad.failure == null && !broad.candidates.isEmpty()) return broad;
         }
         return result;
+    }
+
+    private static SearchResult fetchNeteaseById(MusicLyrics.Track track, String songId) {
+        Uri uri = Uri.parse("https://music.163.com/api/song/lyric").buildUpon()
+                .appendQueryParameter("id", songId)
+                .appendQueryParameter("lv", "1")
+                .appendQueryParameter("kv", "1")
+                .appendQueryParameter("tv", "-1").build();
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(uri.toString()).openConnection();
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13)");
+            connection.setRequestProperty("Referer", "https://music.163.com/");
+            connection.setRequestProperty("Accept", "application/json");
+            int status = connection.getResponseCode();
+            if (status != 200) return null;
+            try (InputStream input = connection.getInputStream()) {
+                ByteArrayOutputStream data = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = input.read(buffer)) != -1) {
+                    if (data.size() + length > MAX_RESPONSE) return null;
+                    data.write(buffer, 0, length);
+                }
+                Candidate candidate = parseNeteaseLyric(track, new String(data.toByteArray(), StandardCharsets.UTF_8));
+                return candidate == null ? null : new SearchResult(Collections.singletonList(candidate), null);
+            }
+        } catch (IOException unavailable) {
+            return null;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    static Candidate parseNeteaseLyric(MusicLyrics.Track track, String body) {
+        if (body == null || body.isEmpty()) return null;
+        try {
+            JSONObject root = new JSONObject(body);
+            if (root.optInt("code", 200) != 200 || root.optBoolean("nolyric") || root.optBoolean("uncollected")) {
+                return null;
+            }
+            JSONObject lrcNode = root.optJSONObject("lrc");
+            if (lrcNode == null) return null;
+            String lrc = lrcNode.optString("lyric", "").replace("\r\n", "\n").trim();
+            if (lrc.isEmpty() || lrc.length() > LrcLyrics.MAX_BYTES || !LrcLyrics.parse(lrc).hasLines()) {
+                return null;
+            }
+            String title = track == null ? "" : track.title;
+            String artist = track == null ? "" : track.artist;
+            String album = track == null ? "" : track.album;
+            long duration = track == null ? 0L : track.duration;
+            return new Candidate(title, artist, album, duration, lrc, true);
+        } catch (JSONException invalid) {
+            return null;
+        }
     }
 
     private static SearchResult executeSearch(Uri uri) {
@@ -279,9 +347,15 @@ final class OnlineLyrics {
     }
 
     static String confidentMatch(MusicLyrics.Track track, List<Candidate> candidates) {
-        if (track == null || !track.searchable() || track.duration <= 0 || candidates == null || candidates.isEmpty()) {
+        if (track == null || !track.searchable() || candidates == null || candidates.isEmpty()) {
             return null;
         }
+        for (Candidate candidate : candidates) {
+            if (candidate != null && candidate.exactId && candidate.lrc != null && !candidate.lrc.isEmpty()) {
+                return candidate.lrc;
+            }
+        }
+        if (track.duration <= 0) return null;
         String trackCleanArtist = cleanArtist(track.artist);
         List<String> trackArtistTokens = artistTokens(trackCleanArtist);
         String trackPrimaryArtist = trackArtistTokens.isEmpty() ? trackCleanArtist : trackArtistTokens.get(0);
@@ -521,13 +595,19 @@ final class OnlineLyrics {
     static final class Candidate {
         final String title, artist, album, lrc;
         final long duration;
+        final boolean exactId;
 
         Candidate(String title, String artist, String album, long duration, String lrc) {
+            this(title, artist, album, duration, lrc, false);
+        }
+
+        Candidate(String title, String artist, String album, long duration, String lrc, boolean exactId) {
             this.title = title == null ? "" : title;
             this.artist = artist == null ? "" : artist;
             this.album = album == null ? "" : album;
             this.duration = duration;
             this.lrc = lrc;
+            this.exactId = exactId;
         }
 
         String label() {

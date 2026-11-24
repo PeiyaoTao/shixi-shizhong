@@ -1532,7 +1532,7 @@ public class MainActivity extends Activity implements UiKit.EditTransactions {
 
         LinearLayout lyrics = UiKit.card(this, body, "音乐歌词", null);
         prefToggle(lyrics, "联网查找歌词", MusicLyrics.ONLINE, MusicLyrics.ONLINE_DEFAULT);
-        UiKit.note(this, lyrics, "优先读取播放器原生歌词（元数据、状态栏歌词、蓝牙歌词与歌词广播）；未提供时向 LRCLIB 自动匹配，仅发送歌名和歌手。");
+        UiKit.note(this, lyrics, "优先读取播放器原生歌词（元数据、状态栏、蓝牙与广播）；未提供时自动匹配在线同步歌词（支持网易云直取与 LRCLIB）。");
 
         LinearLayout permissions = UiKit.card(this, body, "权限与锁屏隐私", null);
         permissions.setTag(PERMISSION_SETTINGS);

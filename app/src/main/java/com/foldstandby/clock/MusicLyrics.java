@@ -735,11 +735,17 @@ final class MusicLyrics {
     }
 
     static final class Track {
-        final String key, title, artist, album, signature;
+        final String key, packageName, mediaId, title, artist, album, signature;
         final long duration;
 
         Track(String key, String title, String artist, String album, long duration) {
+            this(key, "", "", title, artist, album, duration);
+        }
+
+        Track(String key, String packageName, String mediaId, String title, String artist, String album, long duration) {
             this.key = key;
+            this.packageName = packageName == null ? "" : packageName.trim();
+            this.mediaId = mediaId == null ? "" : mediaId.trim();
             this.title = title == null ? "" : title.trim();
             this.artist = artist == null ? "" : artist.trim();
             this.album = album == null ? "" : album.trim();
@@ -747,8 +753,15 @@ final class MusicLyrics {
             this.signature = field(key) + field(this.title) + field(this.artist) + field(this.album) + duration;
         }
 
+        String neteaseSongId() {
+            if (!"com.netease.cloudmusic".equals(packageName)) return null;
+            return mediaId.length() >= 4 && mediaId.length() <= 18 && DIGITS_ONLY.matcher(mediaId).matches()
+                    ? mediaId : null;
+        }
+
         boolean searchable() {
-            return !title.isEmpty() && !artist.isEmpty() && title.length() <= 250 && artist.length() <= 250;
+            return neteaseSongId() != null
+                    || (!title.isEmpty() && !artist.isEmpty() && title.length() <= 250 && artist.length() <= 250);
         }
     }
 
@@ -758,7 +771,9 @@ final class MusicLyrics {
 
     static Track track(MediaController player, MediaMetadata metadata, String key) {
         if (key == null || metadata == null) return null;
-        return new Track(key, title(player, metadata), metadata.getString(MediaMetadata.METADATA_KEY_ARTIST),
+        return new Track(key, player == null ? "" : player.getPackageName(),
+                metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
+                title(player, metadata), metadata.getString(MediaMetadata.METADATA_KEY_ARTIST),
                 metadata.getString(MediaMetadata.METADATA_KEY_ALBUM), metadata.getLong(MediaMetadata.METADATA_KEY_DURATION));
     }
 

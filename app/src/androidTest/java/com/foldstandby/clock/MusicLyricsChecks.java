@@ -84,6 +84,27 @@ final class MusicLyricsChecks {
             require(studio.equals(OnlineLyrics.confidentMatch(singleTrack, Collections.singletonList(featCand))),
                     "feat. suffix and - Single album suffix normalize cleanly");
 
+            // NetEase song ID extraction & direct lyric JSON parsing
+            MusicLyrics.Track neteaseIdTrack = new MusicLyrics.Track("ne/id/2003299229",
+                    "com.netease.cloudmusic", "2003299229", "Number One - Bankai", "鷺巣詩郎", "", 0);
+            require("2003299229".equals(neteaseIdTrack.neteaseSongId()) && neteaseIdTrack.searchable(),
+                    "valid NetEase numeric MEDIA_ID is detected and searchable");
+            MusicLyrics.Track nonNeteaseIdTrack = new MusicLyrics.Track("sp/id/2003299229",
+                    "com.spotify.music", "2003299229", "Song", "Artist", "", 180000);
+            require(nonNeteaseIdTrack.neteaseSongId() == null,
+                    "non-NetEase package does not use NetEase direct song ID");
+            String neteaseJson = new JSONObject().put("code", 200)
+                    .put("lrc", new JSONObject().put("lyric", studio)).toString();
+            OnlineLyrics.Candidate neteaseCand = OnlineLyrics.parseNeteaseLyric(neteaseIdTrack, neteaseJson);
+            require(neteaseCand != null && neteaseCand.exactId && studio.equals(neteaseCand.lrc),
+                    "NetEase JSON lrc payload parses as exactId candidate");
+            require(studio.equals(OnlineLyrics.confidentMatch(neteaseIdTrack, Collections.singletonList(neteaseCand))),
+                    "exactId NetEase candidate matches immediately even without duration");
+            String nolyricJson = new JSONObject().put("code", 200).put("nolyric", true)
+                    .put("lrc", new JSONObject().put("lyric", studio)).toString();
+            require(OnlineLyrics.parseNeteaseLyric(neteaseIdTrack, nolyricJson) == null,
+                    "instrumental nolyric NetEase response is ignored");
+
             // Cross-script artist + exact album + tight duration match (e.g. 鷺巣詩郎 vs Shiro Sagisu)
             MusicLyrics.Track bankaiTrack = new MusicLyrics.Track("ne1", "Number One - Bankai",
                     "鷺巣詩郎/Hazel Fernandes", "Number One - Bankai", 277000);
