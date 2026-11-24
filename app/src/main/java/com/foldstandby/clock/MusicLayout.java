@@ -1,5 +1,6 @@
 package com.foldstandby.clock;
 
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
@@ -13,12 +14,14 @@ import android.text.TextUtils;
 final class MusicLayout {
     private static final float PLAYER_LEFT = 20f, PLAYER_TOP = 14f;
     private static final float PLAYER_WIDTH = 460f, PLAYER_HEIGHT = 294f;
+    private static final float[] CONTEXT_BRIGHTNESS = {.82f, .63f, .47f, .36f};
 
     final RectF lyrics = new RectF();
     final RectF frame = new RectF();
     final Line current = new Line();
     final ContextLines before = new ContextLines(), after = new ContextLines();
     boolean compact, sideBySide, lyricsFirst;
+    int contextLineLimit;
     float playerLeft, playerTop, playerScale, lyricSize;
 
     void arrange(float width, float height, float density, float zoom, MusicLyrics.Position position,
@@ -72,11 +75,18 @@ final class MusicLayout {
         playerTop = contentTop - PLAYER_TOP * playerScale;
         float defaultSize = Math.min(Math.min(42f * density * zoom, lyrics.width() * .11f), lyrics.height() * .26f);
         lyricSize = Math.min(defaultSize * fontSize / 100f, lyrics.height() * .33f);
+        contextLineLimit = fontSize <= 75 ? 4 : fontSize <= 90 ? 3 : 2;
     }
 
     Layout.Alignment lyricAlignment() {
         if (!sideBySide) return Layout.Alignment.ALIGN_CENTER;
         return lyricsFirst ? Layout.Alignment.ALIGN_OPPOSITE : Layout.Alignment.ALIGN_NORMAL;
+    }
+
+    static int contextColor(int secondary, int distance) {
+        float brightness = CONTEXT_BRIGHTNESS[Math.min(distance, CONTEXT_BRIGHTNESS.length) - 1];
+        return Color.argb(Color.alpha(secondary), Math.round(Color.red(secondary) * brightness),
+                Math.round(Color.green(secondary) * brightness), Math.round(Color.blue(secondary) * brightness));
     }
 
     int hit(float x, float y, float density) {
@@ -86,16 +96,16 @@ final class MusicLayout {
     }
 
     static final class ContextLines {
-        private final Line[] cache = new Line[8];
+        private final Line[] cache = new Line[CONTEXT_BRIGHTNESS.length];
         final StaticLayout[] rows = new StaticLayout[cache.length];
         int count;
         float height;
 
         void prepare(LrcLyrics timeline, int index, int direction, float space, float size, float gap,
-                     int width, Typeface typeface, Layout.Alignment alignment) {
+                     int width, Typeface typeface, Layout.Alignment alignment, int limit) {
             count = 0;
             height = 0;
-            for (int cue = index + direction; cue >= 0 && cue < timeline.lineCount() && count < rows.length; cue += direction) {
+            for (int cue = index + direction; cue >= 0 && cue < timeline.lineCount() && count < limit; cue += direction) {
                 String line = timeline.lineAt(cue);
                 if (line.isEmpty()) continue;
                 if (cache[count] == null) cache[count] = new Line();

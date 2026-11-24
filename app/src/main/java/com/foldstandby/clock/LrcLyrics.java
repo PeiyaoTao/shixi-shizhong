@@ -29,11 +29,24 @@ final class LrcLyrics {
     private final long[] times;
     private final String[] lines;
     private final boolean live;
+    private final int[] previousText;
+    private final int firstText;
 
     private LrcLyrics(long[] times, String[] lines, boolean live) {
         this.times = times;
         this.lines = lines;
         this.live = live;
+        previousText = new int[lines.length];
+        int first = -1;
+        int previous = -1;
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].isEmpty()) {
+                if (first < 0) first = i;
+                previous = i;
+            }
+            previousText[i] = previous;
+        }
+        firstText = first;
     }
 
     static String read(InputStream input) throws IOException {
@@ -122,6 +135,11 @@ final class LrcLyrics {
     int indexAt(long position) {
         int match = Arrays.binarySearch(times, position);
         return match >= 0 ? match : -match - 2;
+    }
+
+    int visibleIndex(int timedIndex) {
+        int previous = timedIndex < 0 ? -1 : previousText[timedIndex];
+        return previous < 0 ? firstText : previous;
     }
 
     String lineAt(int index) { return index < 0 || index >= lines.length ? "" : lines[index]; }

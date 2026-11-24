@@ -61,6 +61,8 @@ public final class ClockFace extends View {
     private LrcLyrics lyrics;
     private String playerLyricSource;
     private LrcLyrics playerTimeline;
+    private String retainedLiveTrack;
+    private LrcLyrics retainedLiveLyrics;
     private final SharedPreferences.OnSharedPreferenceChangeListener lyricsChanged = (preferences, key) -> invalidate();
     private final SharedPreferences.OnSharedPreferenceChangeListener lyricSettingChanged = (preferences, key) -> {
         if (MusicLyrics.ONLINE.equals(key)) lyricsChanged.onSharedPreferenceChanged(preferences, key);
@@ -1298,12 +1300,19 @@ public final class ClockFace extends View {
         boolean showLyrics = component.bool(MusicLyrics.SHOW, false);
         LrcLyrics activeLyrics = null;
         int currentLyric = -1;
+        boolean highlightLyric = false;
         if (showLyrics) {
             String trackKey = demo ? null : MusicLyrics.key(controller, meta);
+            if (!Objects.equals(retainedLiveTrack, trackKey)) {
+                retainedLiveTrack = trackKey;
+                retainedLiveLyrics = null;
+            }
             MusicLyrics.Track onlineTrack = OnlineLyrics.enabled(prefs)
                     ? MusicLyrics.track(controller, meta, trackKey) : null;
             LrcLyrics timeline = demo ? LrcLyrics.PREVIEW : trackKey != null
                     ? musicLyrics(controller, meta, trackKey, onlineTrack, position) : null;
+            if (timeline != null && timeline.isLive()) retainedLiveLyrics = timeline;
+            if (timeline == null || !timeline.hasLines()) timeline = retainedLiveLyrics;
             if (timeline != null && timeline.hasLines()) {
                 boolean live = timeline.isLive();
                 int offset = live ? 0 : MusicLyrics.offset(getContext(), trackKey);
@@ -1314,10 +1323,9 @@ public final class ClockFace extends View {
                     long delay = Math.max(16L, (long) Math.ceil((next - pos) / (double) speed));
                     if (delay <= 60000L) nextLyricAt = Math.min(nextLyricAt, SystemClock.uptimeMillis() + delay);
                 }
-                if (!timeline.lineAt(index).isEmpty()) {
-                    activeLyrics = timeline;
-                    currentLyric = index;
-                }
+                activeLyrics = timeline;
+                currentLyric = timeline.visibleIndex(index);
+                highlightLyric = index == currentLyric;
             } else if (onlineTrack != null) {
                 if (position < 0) lookupStatus = "等待播放器提供进度";
                 else if (controller != null && MusicLyrics.hasRecentLiveSource(controller.getPackageName()) && pos < 3500L) {
@@ -1349,7 +1357,7 @@ public final class ClockFace extends View {
             c.scale(layout.playerScale, layout.playerScale);
             drawMusicPlayer(c, art, title, artist, available, playing, pos, duration, actions, true, lookupStatus);
             c.restore();
-            if (activeLyrics != null) drawLyrics(c, layout, activeLyrics, currentLyric);
+            if (activeLyrics != null) drawLyrics(c, layout, activeLyrics, currentLyric, highlightLyric);
             c.restore();
             return;
         }
@@ -1460,44 +1468,49 @@ public final class ClockFace extends View {
         txt(c, status, x, cover ? 150 : 149, 14, muted, regular, width);
     }
 
-    private void drawLyrics(Canvas c, MusicLayout layout, LrcLyrics timeline, int index) {
+    private void drawLyrics(Canvas c, MusicLayout layout, LrcLyrics timeline, int index, boolean highlight) {
         RectF area = layout.lyrics;
         int width = Math.max(1, (int) area.width());
         float size = layout.lyricSize;
         StaticLayout current = layout.current.layout(timeline.lineAt(index), size, width, bold, layout.lyricAlignment(), 2);
-        float space = Math.max(0f, area.height() - current.getHeight());
-        float gap = size * .28f;
+        float gap = size * .23f;
+        float focusGap = size * .15f;
+        float space = Math.max(0f, area.height() - current.getHeight() - 2f * focusGap);
         MusicLayout.ContextLines before = layout.before, after = layout.after;
-        before.prepare(timeline, index, -1, space, size * .63f, gap, width, regular, layout.lyricAlignment());
-        after.prepare(timeline, index, 1, space, size * .63f, gap, width, regular, layout.lyricAlignment());
+        before.prepare(timeline, index, -1, space, size * .63f, gap, width, regular, layout.lyricAlignment(), layout.contextLineLimit);
+        after.prepare(timeline, index, 1, space, size * .63f, gap, width, regular, layout.lyricAlignment(), layout.contextLineLimit);
         while (before.height + after.height > space) {
             (before.height > after.height ? before : after).removeFarthest(gap);
         }
-        float height = before.height + current.getHeight() + after.height;
-        float y = layout.sideBySide ? area.centerY() - height / 2f : layout.lyricsFirst ? area.bottom - height : area.top;
+        float beforeHeight = before.height + (before.count > 0 ? focusGap : 0f);
+        float height = beforeHeight + current.getHeight() + after.height + (after.count > 0 ? focusGap : 0f);
+        float centered = area.centerY() - current.getHeight() / 2f - beforeHeight;
+        float y = layout.sideBySide ? Math.max(area.top, Math.min(centered, area.bottom - height))
+                : layout.lyricsFirst ? area.bottom - height : area.top;
         c.save();
         c.clipRect(area);
         for (int i = before.count - 1; i >= 0; i--) {
             StaticLayout text = before.rows[i];
-            drawLyricLine(c, text, area.left, y, false);
+            drawLyricLine(c, text, area.left, y, i + 1);
             y += text.getHeight() + gap;
         }
-        drawLyricLine(c, current, area.left, y, true);
-        y += current.getHeight() + gap;
+        if (before.count > 0) y += focusGap;
+        drawLyricLine(c, current, area.left, y, highlight ? 0 : 1);
+        y += current.getHeight() + gap + focusGap;
         for (int i = 0; i < after.count; i++) {
             StaticLayout text = after.rows[i];
-            drawLyricLine(c, text, area.left, y, false);
+            drawLyricLine(c, text, area.left, y, i + 1);
             y += text.getHeight() + gap;
         }
         c.restore();
     }
 
-    private void drawLyricLine(Canvas c, StaticLayout text, float x, float y, boolean current) {
+    private void drawLyricLine(Canvas c, StaticLayout text, float x, float y, int distance) {
         c.save();
         c.translate(x, y);
         TextPaint paint = text.getPaint();
-        paint.setColor(current ? ink : muted);
-        if (current) {
+        paint.setColor(distance == 0 ? ink : MusicLayout.contextColor(muted, distance));
+        if (distance == 0) {
             themeShader(0, 0, text.getWidth(), text.getHeight());
             paint.setShader(p.getShader());
         }

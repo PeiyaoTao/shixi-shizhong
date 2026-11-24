@@ -19,6 +19,12 @@ public final class LrcLyricsTest {
         require(lyrics.lineAt(lyrics.indexAt(9950)).equals("副歌"), "repeated timestamp");
         require(lyrics.lineAt(lyrics.indexAt(11750)).isEmpty(), "blank cue clears lyric");
         require(lyrics.nextTime(lyrics.indexAt(11750)) == Long.MAX_VALUE, "no tick after the final cue");
+        LrcLyrics gaps = LrcLyrics.parse("[00:01]\n[00:05]首句\n[00:08]\n[00:10]\n[00:12]末句\n[00:14]");
+        require(gaps.lineAt(gaps.visibleIndex(gaps.indexAt(0))).equals("首句"), "preview the first line before its cue");
+        require(gaps.lineAt(gaps.visibleIndex(gaps.indexAt(1000))).equals("首句"), "skip leading blank markers");
+        require(gaps.lineAt(gaps.visibleIndex(gaps.indexAt(11000))).equals("首句"), "keep the last line through consecutive blank cues");
+        require(gaps.nextTime(gaps.indexAt(11000)) == 12000, "resume matching at the next timed lyric");
+        require(gaps.lineAt(gaps.visibleIndex(gaps.indexAt(18000))).equals("末句"), "keep the final line through the outro");
         require(lyrics.lineAt(lyrics.indexAt(1000)).equals("开场"), "seeking backward");
         require(!LrcLyrics.parse("无时间轴\n[00:00]").hasLines(), "require timed text");
         require(LrcLyrics.parse("[00:00]起句\n[offset:-500]").nextTime(-1) == 500, "negative offset");

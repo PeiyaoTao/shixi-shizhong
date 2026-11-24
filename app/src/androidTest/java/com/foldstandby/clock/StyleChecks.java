@@ -365,16 +365,48 @@ final class StyleChecks {
                 sync(() -> tapPixels(f[0], width / 2f + layout.lyrics.centerX(), height / 2f));
                 runner.waitForIdleSync();
                 check(commands.get(1) == count + 1, "lyrics area does not trigger playback controls");
-                lyrics.edit().putString(key, "[02:00]歌词还未开始").commit();
+                String timedLyrics = "[01:15]第一句\n[01:20]\n[01:25]最后一句\n[01:30]";
+                lyrics.edit().putString(key, timedLyrics).commit();
                 sync(() -> {
+                    Scene.Component widget = musicScene.pages.get(0).slots[0];
+                    Scene.put(widget.theme, "accent", 0xffb4f0bf);
+                    int secondary = 0xff8692a2;
+                    Scene.put(widget.theme, "secondary", secondary);
+                    layout.arrange(slot.width(), slot.height(), density, 1.25f, MusicLyrics.Position.AUTO, 100, 4);
+                    int[] muted = { MusicLayout.contextColor(secondary, 1) };
+                    for (long position : new long[]{74000, 82000, 95000}) {
+                        session[0].setPlaybackState(new PlaybackState.Builder()
+                                .setState(PlaybackState.STATE_PAUSED, position, 0).build());
+                        Bitmap resting = render(f[0], width, height);
+                        check(lyricBands(resting, layout.lyrics, muted, Math.round(3 * density)) > 0,
+                                "lyrics remain visible before, between and after sung lines at " + position);
+                        check(lyricPixels(resting, layout.lyrics) == 0, "a resting line is not highlighted as sung");
+                        resting.recycle();
+                    }
                     session[0].setPlaybackState(new PlaybackState.Builder()
-                            .setState(PlaybackState.STATE_PAUSED, 74000, 0).build());
-                    Bitmap intro = render(f[0], width, height);
+                            .setState(PlaybackState.STATE_PAUSED, 85000, 0).build());
+                    Bitmap resumed = render(f[0], width, height);
+                    check(lyricPixels(resumed, layout.lyrics) > 0, "the next timed line resumes highlighting");
+                    resumed.recycle();
+
                     lyrics.edit().remove(key).commit();
-                    Bitmap playerOnly = render(f[0], width, height);
-                    check(intro.sameAs(playerOnly), "the player uses its full area before the first lyric");
-                    intro.recycle();
-                    playerOnly.recycle();
+                    String pkg = DeskData.media.getPackageName();
+                    MusicLyrics.ingestNotification(pkg, MusicLyrics.FLAG_ALWAYS_SHOW_TICKER,
+                            "星光还在水面上", true, pkg, DeskData.media.getMetadata());
+                    Bitmap live = render(f[0], width, height);
+                    MusicLyrics.clearNotificationLyrics(pkg, MusicLyrics.FLAG_ALWAYS_SHOW_TICKER);
+                    Bitmap quiet = render(f[0], width, height);
+                    check(live.sameAs(quiet), "the displayed live lyric survives an inactive lyric notification");
+                    live.recycle();
+                    quiet.recycle();
+
+                    session[0].setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "next-test-track")
+                            .putString(MediaMetadata.METADATA_KEY_TITLE, "切歌验证").build());
+                    Bitmap switched = render(f[0], width, height);
+                    Bitmap fresh = render(face(musicScene, false, false), width, height);
+                    check(switched.sameAs(fresh), "switching tracks releases the retained live lyrics");
+                    switched.recycle();
+                    fresh.recycle();
                 });
             } finally {
                 lyrics.edit().putString(key, originalLyrics).commit();
@@ -425,6 +457,12 @@ final class StyleChecks {
         Scene.put(lyricComponent.theme, "accent", 0xffb4f0bf);
         int contextColor = 0xff8692a2;
         Scene.put(lyricComponent.theme, "secondary", contextColor);
+        int[] contextColors = new int[4];
+        for (int i = 0; i < contextColors.length; i++) {
+            contextColors[i] = MusicLayout.contextColor(contextColor, i + 1);
+            check(Color.red(contextColors[i]) < Color.red(i == 0 ? contextColor : contextColors[i - 1]),
+                    "more distant lyrics use progressively dimmer colors");
+        }
         check(MusicLyrics.position(lyricComponent) == MusicLyrics.Position.AUTO && MusicLyrics.fontSize(lyricComponent) == 100,
                 "old music components use automatic lyric placement and the original font size");
         ClockFace lyricsFace = face(preview, true, false);
@@ -450,10 +488,17 @@ final class StyleChecks {
             check(lyricPixels(image, layout.lyrics) > 30, "current lyric renders inside its own panel");
             if (i < 2) {
                 int separation = Math.round(3 * density);
-                int normalLines = lyricBands(image, layout.lyrics, contextColor, separation);
+                int normalLines = lyricBands(image, layout.lyrics, contextColors, separation);
+                if (i == 0) {
+                    check(normalLines > 0 && normalLines <= 4, "the standard font keeps a short context around the current lyric");
+                    check(lyricBands(image, layout.lyrics, new int[]{contextColors[1]}, separation) > 0,
+                            "the second context row renders with its own dimmer color");
+                    check(lyricBands(image, layout.lyrics, new int[]{contextColor}, separation) == 0,
+                            "context rows are dimmed in the rendered panel");
+                }
                 Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 60);
                 Bitmap small = render(lyricsFace, width, height);
-                check(lyricBands(small, layout.lyrics, contextColor, separation) > normalLines,
+                check(lyricBands(small, layout.lyrics, contextColors, separation) > normalLines,
                         "smaller lyrics show more context in " + names[i]);
                 save(small, names[i] + "-small.png");
                 small.recycle();
@@ -510,17 +555,20 @@ final class StyleChecks {
         return count;
     }
 
-    private int lyricBands(Bitmap image, RectF lyrics, int color, int separation) {
+    private int lyricBands(Bitmap image, RectF lyrics, int[] colors, int separation) {
         float centerX = image.getWidth() / 2f;
         float centerY = image.getHeight() / 2f;
         int lastTextRow = -1000;
         int bands = 0;
-        for (int row = Math.round(centerY + lyrics.top); row < centerY + lyrics.bottom; row++) {
+        rows: for (int row = Math.round(centerY + lyrics.top); row < centerY + lyrics.bottom; row++) {
             for (int col = Math.round(centerX + lyrics.left); col < centerX + lyrics.right; col += 3) {
-                if (image.getPixel(col, row) != color) continue;
-                if (row - lastTextRow > separation) bands++;
-                lastTextRow = row;
-                break;
+                int pixel = image.getPixel(col, row);
+                for (int color : colors) {
+                    if (pixel != color) continue;
+                    if (row - lastTextRow > separation) bands++;
+                    lastTextRow = row;
+                    continue rows;
+                }
             }
         }
         return bands;
