@@ -3,7 +3,7 @@ android {
     namespace 'com.foldstandby.clock'
     compileSdk 33
     buildToolsVersion '33.0.2'
-    defaultConfig { applicationId 'com.foldstandby.clock'; minSdk 30; targetSdk 33; versionCode 39; versionName '0.5.19' }
+    defaultConfig { applicationId 'com.foldstandby.clock'; minSdk 30; targetSdk 33; versionCode 40; versionName '0.5.20' }
     signingConfigs {
         existingInstallKey {
             storeFile rootProject.file('.build-cache/.android/debug.keystore')

@@ -495,6 +495,12 @@ final class StyleChecks {
                             "the second context row renders with its own dimmer color");
                     check(lyricBands(image, layout.lyrics, new int[]{contextColor}, separation) == 0,
                             "context rows are dimmed in the rendered panel");
+                    Scene.put(lyricComponent.theme, "timeGradient", 2);
+                    Bitmap gradientLyrics = render(lyricsFace, width, height);
+                    check(lyricBands(gradientLyrics, layout.lyrics, contextColors, separation) == 0,
+                            "non-playing lyrics follow the theme gradient instead of solid secondary color");
+                    gradientLyrics.recycle();
+                    Scene.put(lyricComponent.theme, "timeGradient", 0);
                 }
                 Scene.put(lyricComponent.options, MusicLyrics.FONT_SIZE, 60);
                 Bitmap small = render(lyricsFace, width, height);

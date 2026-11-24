@@ -7,6 +7,7 @@ import android.graphics.*;
 import android.media.*;
 import android.media.session.*;
 import android.os.*;
+import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.view.*;
@@ -57,6 +58,7 @@ public final class ClockFace extends View {
     private boolean spectrumUsed;
     private final Rect visibleMusicRect = new Rect();
     private final MusicLayout[] musicLayouts = {new MusicLayout(), new MusicLayout(), new MusicLayout(), new MusicLayout()};
+    private final LyricMotion[] lyricMotions = {new LyricMotion(), new LyricMotion(), new LyricMotion(), new LyricMotion()};
     private String lyricSource;
     private LrcLyrics lyrics;
     private String playerLyricSource;
@@ -198,7 +200,7 @@ public final class ClockFace extends View {
     }
     void bind(Scene value,int index){bound=true;scene=value;selectPage(Math.max(0,Math.min(index,value.pages.size()-1)));}
     private void cancelPageAnimator(){if(pageAnimator!=null){pageAnimator.removeAllListeners();pageAnimator.cancel();pageAnimator=null;}}
-    void selectPage(int index){cancelPageAnimator();pageIndex=index;pagePosition=index;fadeFromPage=-1;subpage=0;flips.clear();pressedMusicSlot=-1;invalidate();}
+    void selectPage(int index){cancelPageAnimator();pageIndex=index;pagePosition=index;fadeFromPage=-1;subpage=0;flips.clear();resetLyricMotions();pressedMusicSlot=-1;invalidate();}
     void animatePage(int index,int direction,int style,int duration){if(scene==null||index<0||index>=scene.pages.size())return;if(style==2||!motionActive||!prefs.getBoolean("motion",true)||!ValueAnimator.areAnimatorsEnabled()||!isAttachedToWindow()){selectPage(index);return;}int previous=fadeFromPage>=0&&fadeAmount<.5f?fadeFromPage:pageIndex;cancelPageAnimator();pageIndex=index;subpage=0;pageMotionStyle=style;fadeFromPage=style==1?previous:-1;fadeAmount=0;pressedMusicSlot=-1;float target=PageMotion.destination(pagePosition,index,direction,scene.pages.size());if(Math.abs(target-pagePosition)<.001f){selectPage(index);return;}pageAnimator=ValueAnimator.ofFloat(pagePosition,target);pageAnimator.setDuration(Math.max(120,Math.min(800,duration)));pageAnimator.setInterpolator(new android.view.animation.PathInterpolator(.22f,.75f,.25f,1f));pageAnimator.addUpdateListener(animation->{pagePosition=(float)animation.getAnimatedValue();fadeAmount=animation.getAnimatedFraction();invalidate();});pageAnimator.addListener(new AnimatorListenerAdapter(){public void onAnimationEnd(Animator animation){pageAnimator=null;pagePosition=pageIndex;fadeFromPage=-1;invalidate();}});pageAnimator.start();}
     boolean pageAnimatingForCheck(){return pageAnimator!=null;}
     float pagePositionForCheck(){return pagePosition;}
@@ -216,14 +218,14 @@ public final class ClockFace extends View {
         prefs.registerOnSharedPreferenceChangeListener(lyricSettingChanged);
         MusicLyrics.observeLive(getContext(), liveLyricsChanged);
     }
-    protected void onDetachedFromWindow(){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}
+    protected void onDetachedFromWindow(){resetMusicSpectrum();resetLyricMotions();updateLyricTick(Long.MAX_VALUE);AlarmData.forget(getContext(),alarmChanged);DeskData.forgetBattery(getContext(),batteryChanged);if(observedMedia!=null){observedMedia.unregisterCallback(mediaEvents);observedMedia=null;}cancelPageAnimator();pagePosition=pageIndex;handler.removeCallbacksAndMessages(null);if(tone!=null){tone.release();tone=null;}
         MusicLyrics.library(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
         OnlineLyrics.cache(getContext()).unregisterOnSharedPreferenceChangeListener(lyricsChanged);
         prefs.unregisterOnSharedPreferenceChangeListener(lyricSettingChanged);
         MusicLyrics.forgetLive(getContext(), liveLyricsChanged);
         super.onDetachedFromWindow();
     }
-    protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){resetMusicSpectrum();updateLyricTick(Long.MAX_VALUE);cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
+    protected void onWindowVisibilityChanged(int visibility){super.onWindowVisibilityChanged(visibility);if(visibility!=VISIBLE){resetMusicSpectrum();resetLyricMotions();updateLyricTick(Long.MAX_VALUE);cancelPageAnimator();pagePosition=pageIndex;}else invalidate();}
     long nextDelayMs(){
         long now=System.currentTimeMillis();
         if(previewPreset>=0)return 60000L-(now%60000L)+50L;
@@ -1298,11 +1300,13 @@ public final class ClockFace extends View {
         layout.compact = false;
         String lookupStatus = null;
         boolean showLyrics = component.bool(MusicLyrics.SHOW, false);
+        String motionTrackKey = demo ? "__demo__" : null;
         LrcLyrics activeLyrics = null;
         int currentLyric = -1;
         boolean highlightLyric = false;
         if (showLyrics) {
             String trackKey = demo ? null : MusicLyrics.key(controller, meta);
+            if (!demo) motionTrackKey = trackKey;
             if (!Objects.equals(retainedLiveTrack, trackKey)) {
                 retainedLiveTrack = trackKey;
                 retainedLiveLyrics = null;
@@ -1364,10 +1368,22 @@ public final class ClockFace extends View {
             c.scale(layout.playerScale, layout.playerScale);
             drawMusicPlayer(c, art, title, artist, available, playing, pos, duration, actions, true, lookupStatus);
             c.restore();
-            if (activeLyrics != null) drawLyrics(c, layout, activeLyrics, currentLyric, highlightLyric);
+            if (activeLyrics != null) {
+                boolean liveMotion = effectsEnabled() && testTime < 0 && isAttachedToWindow()
+                        && getWindowVisibility() == VISIBLE && isShown() && getGlobalVisibleRect(visibleMusicRect);
+                long nowMs = SystemClock.uptimeMillis();
+                LyricMotion motion = lyricMotions[drawingSlot];
+                boolean animating = motion.update(motionTrackKey, activeLyrics.isLive(), currentLyric,
+                        activeLyrics.lineAt(currentLyric), highlightLyric, nowMs, liveMotion);
+                drawLyrics(c, layout, activeLyrics, currentLyric, highlightLyric, motion, nowMs);
+                if (animating) postInvalidateOnAnimation();
+            } else {
+                lyricMotions[drawingSlot].reset();
+            }
             c.restore();
             return;
         }
+        lyricMotions[drawingSlot].reset();
         componentBorder(c, cardRect, 24, 1.5f);
         drawMusicPlayer(c, art, title, artist, available, playing, pos, duration, actions, false, lookupStatus);
     }
@@ -1478,56 +1494,152 @@ public final class ClockFace extends View {
         txt(c, status, x, cover ? 150 : 149, 14, muted, regular, width);
     }
 
-    private void drawLyrics(Canvas c, MusicLayout layout, LrcLyrics timeline, int index, boolean highlight) {
+    private void drawLyrics(Canvas c, MusicLayout layout, LrcLyrics timeline, int index, boolean highlight,
+                            LyricMotion motion, long nowMs) {
         RectF area = layout.lyrics;
         int width = Math.max(1, (int) area.width());
         float size = layout.lyricSize;
-        StaticLayout current = layout.current.layout(timeline.lineAt(index), size, width, bold, layout.lyricAlignment(), 2);
+        Layout.Alignment alignment = layout.lyricAlignment();
+        StaticLayout current = layout.current.layout(timeline.lineAt(index), size, width, bold, alignment, 2);
+        if (current == null) return;
         float gap = size * .23f;
         float focusGap = size * .15f;
         float space = Math.max(0f, area.height() - current.getHeight() - 2f * focusGap);
         MusicLayout.ContextLines before = layout.before, after = layout.after;
-        before.prepare(timeline, index, -1, space, size * .63f, gap, width, regular, layout.lyricAlignment(), layout.contextLineLimit);
-        after.prepare(timeline, index, 1, space, size * .63f, gap, width, regular, layout.lyricAlignment(), layout.contextLineLimit);
+        before.prepare(timeline, index, -1, space, size * .63f, gap, width, regular, alignment, layout.contextLineLimit);
+        after.prepare(timeline, index, 1, space, size * .63f, gap, width, regular, alignment, layout.contextLineLimit);
         while (before.height + after.height > space) {
             (before.height > after.height ? before : after).removeFarthest(gap);
         }
         float beforeHeight = before.height + (before.count > 0 ? focusGap : 0f);
         float height = beforeHeight + current.getHeight() + after.height + (after.count > 0 ? focusGap : 0f);
         float centered = area.centerY() - current.getHeight() / 2f - beforeHeight;
-        float y = layout.sideBySide ? Math.max(area.top, Math.min(centered, area.bottom - height))
+        float topY = layout.sideBySide ? Math.max(area.top, Math.min(centered, area.bottom - height))
                 : layout.lyricsFirst ? area.bottom - height : area.top;
+
+        float refHeight = before.count > 0 ? before.rows[0].getHeight()
+                : after.count > 0 ? after.rows[0].getHeight() : size * .72f;
+        float stepPixels = Math.max(size * .9f, Math.min(area.height() * .42f,
+                (current.getHeight() + refHeight) * .5f + gap + focusGap));
+        float pivotX = alignment == Layout.Alignment.ALIGN_OPPOSITE ? area.right
+                : alignment == Layout.Alignment.ALIGN_CENTER ? area.centerX() : area.left;
+        int totalRows = before.count + 1 + after.count;
+        int stepDir = motion.stepDirection();
+        boolean multiJump = motion.isMultiJump();
+
         c.save();
         c.clipRect(area);
+        if (motion.isAnimating() && !multiJump && stepDir > 0) {
+            float exitAlpha = motion.exitingAlpha(nowMs);
+            if (exitAlpha > .01f) {
+                String departingTop = adjacentLyricLine(timeline, before.count > 0 ? before.cues[before.count - 1] : index, -1);
+                StaticLayout exitText = departingTop == null ? null
+                        : layout.exiting.layout(departingTop, size * .63f, width, regular, alignment, 1);
+                if (exitText != null) {
+                    float exitY = topY - gap - exitText.getHeight() + motion.scrollOffset(nowMs, 0, stepPixels);
+                    drawLyricLine(c, exitText, area.left, exitY, before.count + 1, 0f, 1f, exitAlpha, pivotX);
+                }
+            }
+        }
+
+        float y = topY;
         for (int i = before.count - 1; i >= 0; i--) {
             StaticLayout text = before.rows[i];
-            drawLyricLine(c, text, area.left, y, i + 1);
+            int rowIdx = (before.count - 1) - i;
+            int order = stepDir < 0 ? (totalRows - 1) - rowIdx : rowIdx;
+            float rowY = y + motion.scrollOffset(nowMs, order, stepPixels);
+            boolean departingHero = stepDir > 0 && i == 0 && !multiJump;
+            float scale = departingHero ? motion.departingScale(nowMs, order) : 1f;
+            float emphasis = departingHero ? motion.departingEmphasis(nowMs, order) : 0f;
+            float alpha = multiJump ? motion.jumpAlpha(nowMs, order)
+                    : (stepDir < 0 && i == before.count - 1 ? motion.enteringAlpha(nowMs, order) : 1f);
+            drawLyricLine(c, text, area.left, rowY, i + 1, emphasis, scale, alpha, pivotX);
             y += text.getHeight() + gap;
         }
         if (before.count > 0) y += focusGap;
-        drawLyricLine(c, current, area.left, y, highlight ? 0 : 1);
+
+        int currentOrder = stepDir < 0 ? (totalRows - 1) - before.count : before.count;
+        float currentY = y + motion.scrollOffset(nowMs, currentOrder, stepPixels);
+        float currentScale = motion.currentScale(nowMs, currentOrder);
+        float currentEmphasis = motion.currentEmphasis(nowMs, currentOrder, highlight);
+        float currentAlpha = multiJump ? motion.jumpAlpha(nowMs, currentOrder) : 1f;
+        drawLyricLine(c, current, area.left, currentY, 1, currentEmphasis, currentScale, currentAlpha, pivotX);
         y += current.getHeight() + gap + focusGap;
+
         for (int i = 0; i < after.count; i++) {
             StaticLayout text = after.rows[i];
-            drawLyricLine(c, text, area.left, y, i + 1);
+            int rowIdx = before.count + 1 + i;
+            int order = stepDir < 0 ? (totalRows - 1) - rowIdx : rowIdx;
+            float rowY = y + motion.scrollOffset(nowMs, order, stepPixels);
+            boolean departingHero = stepDir < 0 && i == 0 && !multiJump;
+            float scale = departingHero ? motion.departingScale(nowMs, order) : 1f;
+            float emphasis = departingHero ? motion.departingEmphasis(nowMs, order) : 0f;
+            float alpha = multiJump ? motion.jumpAlpha(nowMs, order)
+                    : (stepDir > 0 && i == after.count - 1 ? motion.enteringAlpha(nowMs, order) : 1f);
+            drawLyricLine(c, text, area.left, rowY, i + 1, emphasis, scale, alpha, pivotX);
             y += text.getHeight() + gap;
+        }
+
+        if (motion.isAnimating() && !multiJump && stepDir < 0) {
+            float exitAlpha = motion.exitingAlpha(nowMs);
+            if (exitAlpha > .01f) {
+                String departingBottom = adjacentLyricLine(timeline, after.count > 0 ? after.cues[after.count - 1] : index, 1);
+                StaticLayout exitText = departingBottom == null ? null
+                        : layout.exiting.layout(departingBottom, size * .63f, width, regular, alignment, 1);
+                if (exitText != null) {
+                    float exitY = y + motion.scrollOffset(nowMs, 0, stepPixels);
+                    drawLyricLine(c, exitText, area.left, exitY, after.count + 1, 0f, 1f, exitAlpha, pivotX);
+                }
+            }
         }
         c.restore();
     }
 
-    private void drawLyricLine(Canvas c, StaticLayout text, float x, float y, int distance) {
+    private static String adjacentLyricLine(LrcLyrics timeline, int fromCue, int direction) {
+        for (int cue = fromCue + direction; cue >= 0 && cue < timeline.lineCount(); cue += direction) {
+            String line = timeline.lineAt(cue);
+            if (!line.isEmpty()) return line;
+        }
+        return null;
+    }
+
+    private void drawLyricLine(Canvas c, StaticLayout text, float x, float y, int baseDistance,
+                               float emphasis, float scale, float alpha, float pivotX) {
+        if (alpha <= .005f) return;
         c.save();
         c.translate(x, y);
-        TextPaint paint = text.getPaint();
-        paint.setColor(distance == 0 ? ink : MusicLayout.contextColor(muted, distance));
-        if (distance == 0) {
-            themeShader(0, 0, text.getWidth(), text.getHeight());
-            paint.setShader(p.getShader());
+        if (Math.abs(scale - 1f) > .001f) {
+            c.scale(scale, scale, pivotX - x, text.getHeight() * .5f);
         }
-        text.draw(c);
-        paint.setShader(null);
-        p.setShader(null);
+        TextPaint paint = text.getPaint();
+        if (gradient > 0) {
+            float baseOpacity = (176f / 255f) * MusicLayout.contextBrightness(baseDistance);
+            float lineOpacity = emphasis <= .001f ? baseOpacity
+                    : emphasis >= .999f ? 1f : baseOpacity + (1f - baseOpacity) * emphasis;
+            int finalAlpha = Math.max(0, Math.min(255, Math.round(255f * lineOpacity * alpha)));
+            if (finalAlpha > 0) {
+                paint.setColor(ink);
+                themeShader(0, 0, text.getWidth(), text.getHeight());
+                paint.setShader(p.getShader());
+                paint.setAlpha(finalAlpha);
+                text.draw(c);
+            }
+            paint.setShader(null);
+            paint.setAlpha(255);
+            p.setShader(null);
+        } else {
+            int baseColor = MusicLayout.contextColor(muted, baseDistance);
+            int color = emphasis <= .001f ? baseColor
+                    : emphasis >= .999f ? ink : LyricMotion.blendArgb(baseColor, ink, emphasis);
+            paint.setShader(null);
+            paint.setColor(alpha >= .999f ? color : LyricMotion.withAlpha(color, alpha));
+            text.draw(c);
+        }
         c.restore();
+    }
+
+    private void resetLyricMotions() {
+        for (LyricMotion motion : lyricMotions) motion.reset();
     }
 
     private void resetMusicSpectrum() {

@@ -19,6 +19,7 @@ final class MusicLayout {
     final RectF lyrics = new RectF();
     final RectF frame = new RectF();
     final Line current = new Line();
+    final Line exiting = new Line();
     final ContextLines before = new ContextLines(), after = new ContextLines();
     boolean compact, sideBySide, lyricsFirst;
     int contextLineLimit;
@@ -83,8 +84,12 @@ final class MusicLayout {
         return lyricsFirst ? Layout.Alignment.ALIGN_OPPOSITE : Layout.Alignment.ALIGN_NORMAL;
     }
 
+    static float contextBrightness(int distance) {
+        return CONTEXT_BRIGHTNESS[Math.min(Math.max(1, distance), CONTEXT_BRIGHTNESS.length) - 1];
+    }
+
     static int contextColor(int secondary, int distance) {
-        float brightness = CONTEXT_BRIGHTNESS[Math.min(distance, CONTEXT_BRIGHTNESS.length) - 1];
+        float brightness = contextBrightness(distance);
         return Color.argb(Color.alpha(secondary), Math.round(Color.red(secondary) * brightness),
                 Math.round(Color.green(secondary) * brightness), Math.round(Color.blue(secondary) * brightness));
     }
@@ -98,6 +103,7 @@ final class MusicLayout {
     static final class ContextLines {
         private final Line[] cache = new Line[CONTEXT_BRIGHTNESS.length];
         final StaticLayout[] rows = new StaticLayout[cache.length];
+        final int[] cues = new int[cache.length];
         int count;
         float height;
 
@@ -112,6 +118,7 @@ final class MusicLayout {
                 StaticLayout text = cache[count].layout(line, size, width, typeface, alignment, 1);
                 float rowHeight = text.getHeight() + gap;
                 if (height + rowHeight > space) break;
+                cues[count] = cue;
                 rows[count++] = text;
                 height += rowHeight;
             }
